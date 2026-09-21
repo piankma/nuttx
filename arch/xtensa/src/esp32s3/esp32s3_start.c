@@ -48,6 +48,7 @@
 #include "soc/rtc.h"
 #include "esp32s3_wdt.h"
 #include "esp32s3_dma.h"
+#include "esp32s3_dfs.h"
 #ifdef CONFIG_BUILD_PROTECTED
 #  include "esp32s3_userspace.h"
 #endif
@@ -357,6 +358,17 @@ noinstrument_function void noreturn_function IRAM_ATTR __esp32s3_start(void)
 
   esp32s3_wdt_early_deinit();
 
+  /* Configure the RTC and power related hardware, as the ESP32 and the
+   * RISC-V Espressif chips do.  Among other things this loads the chip's
+   * calibrated core voltages from eFuse; without it every CPU frequency
+   * switch applies the HAL's conservative defaults instead, which can be
+   * higher than the chip needs (by about 40 mV, and 3 mA at idle, on the
+   * chip this was measured on).  It has to come before the flash is set up
+   * and before the CPU frequency is set.
+   */
+
+  esp_rtc_init();
+
   esp_flash_app_init();
 
   /* Initialize RTC controller and set CPU frequency */
@@ -468,6 +480,12 @@ noinstrument_function void noreturn_function IRAM_ATTR __esp32s3_start(void)
 void weak_function xtensa_soc_initialize(void)
 {
   sys_startup_fn();
+
+#ifdef CONFIG_ESP32S3_DFS
+  /* The startup functions have initialized the HAL's power management */
+
+  esp32s3_dfs_initialize();
+#endif
 }
 
 /****************************************************************************

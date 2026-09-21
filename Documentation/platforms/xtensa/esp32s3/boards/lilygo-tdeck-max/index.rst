@@ -468,11 +468,22 @@ Touches are reported: ``tc`` prints them on the device.
 Power
 =====
 
-With the terminal idle and the radios off, the board draws 39 mA, about
-36 hours from a full cell.  It drew 98 mA before two changes:
+With the terminal idle and the radios off, the board draws 28 mA, about
+50 hours from a full cell.  It drew 98 mA before these changes:
 
-* The ``full`` configuration runs the CPU at 80 MHz rather than 240 MHz,
-  which saves 14 mA and costs about a third of a second of boot time.
+* The ``full`` configuration scales the CPU frequency
+  (``ESP32S3_DFS``): 240 MHz whenever anything runs, 80 MHz while the CPU is
+  idle.  The idle loop lowers the frequency before it waits for an
+  interrupt, and every interrupt raises it again.  Idling at 80 MHz rather
+  than 240 MHz saves 14 mA.
+* The ``full`` configuration uses the tickless scheduler
+  (``ESP32S3_TICKLESS``, with ``USEC_PER_TICK`` kept at 10000 so the 32-bit
+  tick counter does not wrap within days).  It saves no measurable power by
+  itself, but it is what lets the CPU stay asleep for longer than a tick.
+* The start code now loads the chip's calibrated core voltages from eFuse
+  (``esp_rtc_init()``, as the ESP32 and RISC-V Espressif ports already did).
+  Without them the HAL applies conservative defaults, about 40 mV higher on
+  this board's chip, and frequency scaling cost 3 mA instead of saving it.
 * Chips whose power rails are off are no longer fed through their pins.  A
   line held high into an unpowered chip powers it through its input
   protection.  The GPS UART's transmit line fed the unpowered GPS about
@@ -496,6 +507,21 @@ The draw can be measured with USB connected: setting ``EN_HIZ`` (bit 7 of
 the SY6970's register 0x00) disconnects USB power, so the board runs from
 the battery and the fuel gauge reports its current, while USB data keeps
 working.  It must be cleared again afterwards.
+
+Frequency scaling uses the HAL's power management, which the build enables
+for the HAL (``CONFIG_PM_ENABLE``) only with ``ESP32S3_DFS``; NuttX's own
+power management (``CONFIG_PM``) stays off.  The idle frequency cannot go
+below 80 MHz: below that the APB clock drops too, and peripheral timing
+with it.  ``up_udelay()`` counts CPU cycles through the ROM, so busy-wait
+delays stay right at either frequency.
+
+.. note::
+
+   After BLE has been brought up, the radio's RF section stays powered
+   through a software or USB reset, costing about 18 mA until the board is
+   power cycled.  Starting and stopping Wi-Fi once (``ifup wlan0`` then
+   ``ifdown wlan0``) switches it off.  A JTAG session similarly leaves the
+   chip drawing about 5 mA more until the next reset.
 
 .. warning::
 
