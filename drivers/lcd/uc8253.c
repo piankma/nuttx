@@ -31,10 +31,19 @@
  * ioctl, so an application draws as often as it likes and pays for one
  * refresh when it asks for one.
  *
+ * With CONFIG_LCD_UC8253_ASYNC the refresh itself moves to a thread of its
+ * own, and redraw() only wakes it.  That matters for callers that draw a
+ * little at a time and ask for an update after each piece, as NX does:
+ * the updates that arrive while a refresh runs all go out in the next one.
+ *
  * The controller keeps two frame buffers, "previous" (DTM1) and "current"
- * (DTM2), and drives each pixel from the transition between them.  After a
- * refresh the current frame becomes the previous one, so steady state only
- * needs DTM2 to be written.
+ * (DTM2), and a partial refresh drives each pixel from the transition
+ * between them: a pixel whose two values agree is left alone.  The
+ * controller does not carry the current frame over into the previous one
+ * after a refresh, so every partial refresh writes both, the previous one
+ * from a copy of what the glass shows.  The vendor's code also soft resets
+ * the controller after every refresh, with the note "needed, reason
+ * unknown"; this driver does the same.
  *
  * The first refresh after a reset is the exception, and is treated as a
  * clear: both buffers are written white and the frame that triggered it is
@@ -58,7 +67,10 @@
 #include <debug.h>
 
 #include <nuttx/arch.h>
+#include <nuttx/kthread.h>
+#include <nuttx/mutex.h>
 #include <nuttx/sched.h>
+#include <nuttx/semaphore.h>
 #include <nuttx/spi/spi.h>
 #include <nuttx/lcd/lcd.h>
 #include <nuttx/lcd/uc8253.h>
@@ -123,6 +135,7 @@
 #define UC8253_TSSET_FAST    0x5a  /* 90 degrees, ~1.0 s full refresh */
 #define UC8253_TSSET_PART    0x79  /* 121 degrees, ~0.7 s partial refresh */
 #define UC8253_CCSET_FIX     0x02  /* Use the forced temperature */
+#define UC8253_CCSET_SENSOR  0x00  /* Use the measured temperature */
 
 /* Timeouts, in milliseconds.  These bound how long the driver waits for the
  * BUSY line and are deliberately generous: the panel is slower when cold,
@@ -156,7 +169,24 @@ struct uc8253_dev_s
   FAR const struct uc8253_priv_s *board_priv; /* Board specific hooks */
   bool on;                                    /* Panel is powered up */
   bool configured;                            /* Init sequence has run */
-  bool initial;                               /* No frame written yet */
+  bool initial;                               /* Controller RAM undefined */
+  bool known;                                 /* glass_fb matches glass */
+  bool dropped;                               /* First flush discarded */
+  bool stale;                                 /* Last refresh failed */
+
+  /* priv->panel serialises everything that talks to the controller and is
+   * held for a whole refresh.  priv->fblock only protects the shadow
+   * framebuffer and the dirty region, and is only ever held briefly, so
+   * that drawing never has to wait for the panel.  When both are needed,
+   * panel is taken first.
+   */
+
+  mutex_t panel;
+  mutex_t fblock;
+
+#ifdef CONFIG_LCD_UC8253_ASYNC
+  sem_t kick;                                 /* Wakes the refresh thread */
+#endif
 
   /* Region of the shadow framebuffer touched since the last refresh, as
    * inclusive pixel coordinates.  Tracking it lets redraw() refresh just
@@ -182,6 +212,13 @@ struct uc8253_dev_s
    */
 
   uint8_t shadow_fb[UC8253_FBSIZE];
+
+  /* What the glass shows: the part of the shadow framebuffer that has been
+   * refreshed.  A partial refresh needs it as the "previous" frame.  Only
+   * the refresh path touches it, under priv->panel.
+   */
+
+  uint8_t glass_fb[UC8253_FBSIZE];
 };
 
 /****************************************************************************
@@ -208,13 +245,26 @@ static void uc8253_reset(FAR struct uc8253_dev_s *priv);
 static int  uc8253_configure(FAR struct uc8253_dev_s *priv);
 static int  uc8253_poweron(FAR struct uc8253_dev_s *priv);
 static int  uc8253_poweroff(FAR struct uc8253_dev_s *priv);
-static int  uc8253_drive(FAR struct uc8253_dev_s *priv);
+static void uc8253_softreset(FAR struct uc8253_dev_s *priv);
+static int  uc8253_start(FAR struct uc8253_dev_s *priv, bool partial);
+static int  uc8253_finish(FAR struct uc8253_dev_s *priv, bool partial);
 static int  uc8253_clear(FAR struct uc8253_dev_s *priv);
+static int  uc8253_reseed(FAR struct uc8253_dev_s *priv);
+static int  uc8253_update(FAR struct uc8253_dev_s *priv);
+#ifdef CONFIG_LCD_UC8253_ASYNC
+static void uc8253_kick(FAR struct uc8253_dev_s *priv);
+static int  uc8253_thread(int argc, FAR char *argv[]);
+#endif
 static void uc8253_dirty(FAR struct uc8253_dev_s *priv, fb_coord_t x1,
                          fb_coord_t y1, fb_coord_t x2, fb_coord_t y2);
 static void uc8253_setwindow(FAR struct uc8253_dev_s *priv, fb_coord_t x,
                              fb_coord_t y, fb_coord_t w, fb_coord_t h);
-static int  uc8253_refresh(FAR struct uc8253_dev_s *priv);
+static void uc8253_sendwindow(FAR struct uc8253_dev_s *priv, uint8_t cmd,
+                              fb_coord_t x, fb_coord_t y, fb_coord_t w,
+                              fb_coord_t h);
+static bool uc8253_trim(FAR struct uc8253_dev_s *priv, FAR fb_coord_t *x,
+                        FAR fb_coord_t *y, FAR fb_coord_t *w,
+                        FAR fb_coord_t *h);
 
 /* LCD data transfer methods */
 
@@ -345,7 +395,13 @@ static void uc8253_bitcpy(FAR uint8_t *dest, int dest_offset,
 
       if (nbits + dest_offset <= 8)
         {
-          mask   = (uint8_t)((0xff << (8 - nbits)) >> dest_offset);
+          /* Truncate to a byte before shifting right: 0xff << n is an int,
+           * and shifting its high bits back down would widen the mask over
+           * the pixels in front of the run.
+           */
+
+          mask   = (uint8_t)(0xff << (8 - nbits));
+          mask >>= dest_offset;
           *dest &= ~mask;
           *dest |= (val >> dest_offset) & mask;
         }
@@ -583,33 +639,32 @@ static int uc8253_poweroff(FAR struct uc8253_dev_s *priv)
 }
 
 /****************************************************************************
- * Name: uc8253_drive
+ * Name: uc8253_softreset
  *
  * Description:
- *   Run one full refresh from whatever is already in the controller's two
- *   frame buffers.  Must be held by the caller's lock.
+ *   Soft reset the controller and put the panel setting back.  The vendor's
+ *   code does this after every refresh, noting only that it is needed.  The
+ *   RAM is kept.  Must be held by the caller's lock.
  *
  ****************************************************************************/
 
-static int uc8253_drive(FAR struct uc8253_dev_s *priv)
+static void uc8253_softreset(FAR struct uc8253_dev_s *priv)
 {
-  int ret;
-
-#ifdef CONFIG_LCD_UC8253_FASTUPDATE
-  uc8253_sendcmd1(priv, UC8253_CCSET, UC8253_CCSET_FIX);
-  uc8253_sendcmd1(priv, UC8253_TSSET, UC8253_TSSET_FAST);
-#endif
-
-  uc8253_sendcmd1(priv, UC8253_CDI, UC8253_CDI_FULL);
-
-  ret = uc8253_poweron(priv);
-  if (ret < 0)
+  static const uint8_t reset[] =
     {
-      return ret;
-    }
+      UC8253_PSR_SOFTRESET, UC8253_PSR_BYTE2
+    };
 
-  uc8253_sendcmd(priv, UC8253_DRF);
-  return uc8253_busywait(priv, UC8253_REFRESH_TMO_MS);
+  static const uint8_t run[] =
+    {
+      UC8253_PSR_RUN, UC8253_PSR_BYTE2
+    };
+
+  uc8253_sendcmd(priv, UC8253_PSR);
+  uc8253_senddata(priv, reset, sizeof(reset));
+  up_mdelay(1);
+  uc8253_sendcmd(priv, UC8253_PSR);
+  uc8253_senddata(priv, run, sizeof(run));
 }
 
 /****************************************************************************
@@ -702,12 +757,185 @@ static void uc8253_setwindow(FAR struct uc8253_dev_s *priv, fb_coord_t x,
 }
 
 /****************************************************************************
+ * Name: uc8253_sendwindow
+ *
+ * Description:
+ *   Write a byte aligned rectangle of glass_fb into one of the controller's
+ *   frame buffers.  Must be held by the caller's lock.
+ *
+ ****************************************************************************/
+
+static void uc8253_sendwindow(FAR struct uc8253_dev_s *priv, uint8_t cmd,
+                              fb_coord_t x, fb_coord_t y, fb_coord_t w,
+                              fb_coord_t h)
+{
+  fb_coord_t row;
+
+  uc8253_sendcmd(priv, UC8253_PTIN);
+  uc8253_setwindow(priv, x, y, w, h);
+  uc8253_sendcmd(priv, cmd);
+
+  SPI_SELECT(priv->spi, SPIDEV_DISPLAY(0), true);
+  SPI_CMDDATA(priv->spi, SPIDEV_DISPLAY(0), false);
+
+  for (row = y; row < y + h; row++)
+    {
+      SPI_SNDBLOCK(priv->spi,
+                   priv->glass_fb + row * UC8253_ROWSIZE + (x >> 3),
+                   w >> 3);
+    }
+
+  SPI_SELECT(priv->spi, SPIDEV_DISPLAY(0), false);
+  uc8253_sendcmd(priv, UC8253_PTOUT);
+}
+
+/****************************************************************************
+ * Name: uc8253_trim
+ *
+ * Description:
+ *   Shrink a byte aligned rectangle to the part where the shadow framebuffer
+ *   differs from the glass.  Drawing often repaints what is already there:
+ *   NX, for one, fills whole windows with the colour they already have, and
+ *   refreshing that would flash the panel for nothing.  Called with
+ *   priv->fblock held.
+ *
+ * Returned Value:
+ *   false if nothing differs, and there is nothing to refresh.
+ *
+ ****************************************************************************/
+
+static bool uc8253_trim(FAR struct uc8253_dev_s *priv, FAR fb_coord_t *x,
+                        FAR fb_coord_t *y, FAR fb_coord_t *w,
+                        FAR fb_coord_t *h)
+{
+  fb_coord_t bfirst = *x >> 3;
+  fb_coord_t blast  = (*x + *w) >> 3;
+  fb_coord_t b0     = blast;
+  fb_coord_t b1     = 0;
+  fb_coord_t y0     = *y + *h;
+  fb_coord_t y1     = 0;
+  fb_coord_t row;
+  fb_coord_t b;
+  size_t offset;
+
+  for (row = *y; row < *y + *h; row++)
+    {
+      offset = row * UC8253_ROWSIZE;
+      for (b = bfirst; b < blast; b++)
+        {
+          if (priv->shadow_fb[offset + b] != priv->glass_fb[offset + b])
+            {
+              b0 = b < b0 ? b : b0;
+              b1 = b > b1 ? b : b1;
+              y0 = row < y0 ? row : y0;
+              y1 = row;
+            }
+        }
+    }
+
+  if (b0 > b1)
+    {
+      return false;
+    }
+
+  *x = b0 << 3;
+  *w = (b1 - b0 + 1) << 3;
+  *y = y0;
+  *h = y1 - y0 + 1;
+  return true;
+}
+
+/****************************************************************************
+ * Name: uc8253_start
+ *
+ * Description:
+ *   Start a refresh of whatever is in the controller's frame buffers.  For
+ *   a partial refresh the caller has already selected the window.  Must be
+ *   called with the SPI bus held.
+ *
+ ****************************************************************************/
+
+static int uc8253_start(FAR struct uc8253_dev_s *priv, bool partial)
+{
+  int ret;
+
+#ifdef CONFIG_LCD_UC8253_PARTIAL
+  if (partial)
+    {
+      /* The partial waveform is a different one, which is what keeps the
+       * rest of the screen from flashing.
+       */
+
+      uc8253_sendcmd1(priv, UC8253_CCSET, UC8253_CCSET_FIX);
+      uc8253_sendcmd1(priv, UC8253_TSSET, UC8253_TSSET_PART);
+      uc8253_sendcmd1(priv, UC8253_CDI, UC8253_CDI_PARTIAL);
+    }
+  else
+#endif
+    {
+#ifdef CONFIG_LCD_UC8253_FASTUPDATE
+      uc8253_sendcmd1(priv, UC8253_CCSET, UC8253_CCSET_FIX);
+      uc8253_sendcmd1(priv, UC8253_TSSET, UC8253_TSSET_FAST);
+#else
+      /* A partial refresh forces the temperature; hand it back to the
+       * sensor, or the full waveform would be chosen for the wrong one.
+       */
+
+      uc8253_sendcmd1(priv, UC8253_CCSET, UC8253_CCSET_SENSOR);
+#endif
+      uc8253_sendcmd1(priv, UC8253_CDI, UC8253_CDI_FULL);
+    }
+
+  ret = uc8253_poweron(priv);
+  if (ret < 0)
+    {
+      return ret;
+    }
+
+  uc8253_sendcmd(priv, UC8253_DRF);
+  return OK;
+}
+
+/****************************************************************************
+ * Name: uc8253_finish
+ *
+ * Description:
+ *   Wait for a refresh started by uc8253_start() to complete, then turn the
+ *   driving voltages off again.  Called with the SPI bus held, and returns
+ *   with it held, but lets go of it while the panel works: a refresh takes
+ *   most of a second, the panel does not need the bus for it, and the
+ *   microSD card and the radio on the same bus would otherwise be locked
+ *   out for all of it.
+ *
+ ****************************************************************************/
+
+static int uc8253_finish(FAR struct uc8253_dev_s *priv, bool partial)
+{
+  int ret;
+
+  uc8253_unlock(priv);
+  ret = uc8253_busywait(priv, UC8253_REFRESH_TMO_MS);
+  uc8253_lock(priv);
+
+#ifdef CONFIG_LCD_UC8253_PARTIAL
+  if (partial)
+    {
+      uc8253_sendcmd(priv, UC8253_PTOUT);
+    }
+#endif
+
+  uc8253_poweroff(priv);
+  uc8253_softreset(priv);
+  return ret;
+}
+
+/****************************************************************************
  * Name: uc8253_clear
  *
  * Description:
  *   Drive the whole panel to white.  Both controller buffers are written,
  *   so this also gives the "previous" buffer a defined value, which every
- *   later differential refresh depends on.
+ *   later differential refresh depends on.  Called with priv->panel held.
  *
  ****************************************************************************/
 
@@ -722,146 +950,303 @@ static int uc8253_clear(FAR struct uc8253_dev_s *priv)
   uc8253_sendcmd(priv, UC8253_DTM2);
   uc8253_sendfill(priv, 0xff, UC8253_FBSIZE);
 
-  ret = uc8253_drive(priv);
-
-  uc8253_poweroff(priv);
-  uc8253_unlock(priv);
-
+  ret = uc8253_start(priv, false);
   if (ret >= 0)
     {
-      priv->initial = false;
+      ret = uc8253_finish(priv, false);
+    }
+  else
+    {
+      uc8253_poweroff(priv);
     }
 
-  return ret;
-}
-
-/****************************************************************************
- * Name: uc8253_refresh
- *
- * Description:
- *   Push the shadow framebuffer to the controller and run a full refresh.
- *
- *   The controller drives each pixel from the transition between its
- *   "previous" and "current" buffers, and after a refresh the current frame
- *   becomes the previous one.  In steady state that means only the current
- *   buffer has to be written.
- *
- ****************************************************************************/
-
-static int uc8253_refresh(FAR struct uc8253_dev_s *priv)
-{
-  int ret;
-
-  uc8253_lock(priv);
-
-  uc8253_sendcmd(priv, UC8253_DTM2);
-  uc8253_senddata(priv, priv->shadow_fb, UC8253_FBSIZE);
-
-  ret = uc8253_drive(priv);
-
-  uc8253_poweroff(priv);
   uc8253_unlock(priv);
 
   if (ret >= 0)
     {
+      memset(priv->glass_fb, 0xff, UC8253_FBSIZE);
+      priv->initial  = false;
+      priv->known    = true;
+      priv->stale    = false;
       priv->partials = 0;
     }
 
   return ret;
 }
 
-#ifdef CONFIG_LCD_UC8253_PARTIAL
-
 /****************************************************************************
- * Name: uc8253_drivepart
+ * Name: uc8253_reseed
  *
  * Description:
- *   Run a partial refresh over the window already selected by the caller.
- *   The waveform is a different one from the full refresh, which is what
- *   keeps the rest of the screen from flashing.  Must be held by the
- *   caller's lock.
+ *   Load both controller buffers with what the glass shows, without
+ *   refreshing.  This is how the panel comes back from deep sleep: the
+ *   controller has lost its RAM, but the glass, being bistable, still shows
+ *   what it did.  Anything drawn since goes out with the next refresh.
+ *   Called with priv->panel held.
  *
  ****************************************************************************/
 
-static int uc8253_drivepart(FAR struct uc8253_dev_s *priv)
+static int uc8253_reseed(FAR struct uc8253_dev_s *priv)
 {
-  int ret;
+  uc8253_lock(priv);
 
-  uc8253_sendcmd1(priv, UC8253_CCSET, UC8253_CCSET_FIX);
-  uc8253_sendcmd1(priv, UC8253_TSSET, UC8253_TSSET_PART);
-  uc8253_sendcmd1(priv, UC8253_CDI, UC8253_CDI_PARTIAL);
+  uc8253_sendcmd(priv, UC8253_DTM1);
+  uc8253_senddata(priv, priv->glass_fb, UC8253_FBSIZE);
+  uc8253_sendcmd(priv, UC8253_DTM2);
+  uc8253_senddata(priv, priv->glass_fb, UC8253_FBSIZE);
 
-  ret = uc8253_poweron(priv);
-  if (ret < 0)
-    {
-      return ret;
-    }
+  uc8253_unlock(priv);
 
-  uc8253_sendcmd(priv, UC8253_DRF);
-  return uc8253_busywait(priv, UC8253_REFRESH_TMO_MS);
+  priv->initial = false;
+  return OK;
 }
 
 /****************************************************************************
- * Name: uc8253_refreshpart
+ * Name: uc8253_update
  *
  * Description:
- *   Push the dirty rectangle of the shadow framebuffer to the controller
- *   and refresh only that part of the panel.  The rectangle is widened to
- *   byte boundaries first because the controller addresses its RAM by the
- *   byte horizontally.
+ *   Bring the panel up to date with the shadow framebuffer: push whatever
+ *   has been drawn since the last refresh and refresh the part of the panel
+ *   it covers.
+ *
+ *   A partial refresh drives each pixel from the transition between the
+ *   controller's "previous" and "current" buffers, so both are written for
+ *   the rectangle: the previous one with what the glass shows, from
+ *   glass_fb, and the current one with the new drawing.  A full refresh
+ *   drives every pixel regardless and, as in the vendor's code, gets the new
+ *   frame in both.
+ *
+ *   Refreshes are serialised by priv->panel.  The framebuffer lock is only
+ *   held while the dirty rows are copied out, so drawing can carry on while
+ *   the panel refreshes; whatever is drawn meanwhile is picked up by the
+ *   next update.
  *
  ****************************************************************************/
 
-static int uc8253_refreshpart(FAR struct uc8253_dev_s *priv)
+static int uc8253_update(FAR struct uc8253_dev_s *priv)
 {
-  fb_coord_t x = priv->x1 & ~0x0007;
-  fb_coord_t y = priv->y1;
-  fb_coord_t w = ((priv->x2 | 0x0007) - x) + 1;
-  fb_coord_t h = (priv->y2 - y) + 1;
+  fb_coord_t x;
+  fb_coord_t y;
+  fb_coord_t w;
+  fb_coord_t h;
   fb_coord_t row;
-  int ret;
+  bool partial = false;
+  int ret = OK;
 
-  uc8253_lock(priv);
+  nxmutex_lock(&priv->panel);
 
-  /* Write the rectangle into the controller's current frame buffer */
-
-  uc8253_sendcmd(priv, UC8253_PTIN);
-  uc8253_setwindow(priv, x, y, w, h);
-  uc8253_sendcmd(priv, UC8253_DTM2);
-
-  SPI_SELECT(priv->spi, SPIDEV_DISPLAY(0), true);
-  SPI_CMDDATA(priv->spi, SPIDEV_DISPLAY(0), false);
-
-  for (row = y; row < y + h; row++)
+  if (!priv->on)
     {
-      SPI_SNDBLOCK(priv->spi,
-                   priv->shadow_fb + row * UC8253_ROWSIZE + (x >> 3),
-                   w >> 3);
+      /* Nothing is lost: the drawing stays in the shadow framebuffer and
+       * goes out with the first update after the panel is powered again.
+       */
+
+      goto out;
     }
 
-  SPI_SELECT(priv->spi, SPIDEV_DISPLAY(0), false);
-  uc8253_sendcmd(priv, UC8253_PTOUT);
+  if (!priv->configured)
+    {
+      ret = uc8253_configure(priv);
+      if (ret < 0)
+        {
+          goto out;
+        }
+    }
 
-  /* Then refresh just that window */
+  if (priv->initial)
+    {
+      ret = priv->known ? uc8253_reseed(priv) : uc8253_clear(priv);
+      if (ret < 0)
+        {
+          goto out;
+        }
+    }
 
-  uc8253_sendcmd(priv, UC8253_PTIN);
-  uc8253_setwindow(priv, x, y, w, h);
+  nxmutex_lock(&priv->fblock);
 
-  ret = uc8253_drivepart(priv);
+  if (priv->x1 > priv->x2)
+    {
+      /* Nothing has been drawn since the last refresh.  Refreshing anyway
+       * would cost a second and wear the panel for no reason.
+       */
 
-  uc8253_sendcmd(priv, UC8253_PTOUT);
-  uc8253_poweroff(priv);
+      nxmutex_unlock(&priv->fblock);
+      goto out;
+    }
+
+  /* The controller addresses its RAM by the byte horizontally, so widen the
+   * rectangle to byte boundaries.
+   */
+
+  x = priv->x1 & ~0x0007;
+  y = priv->y1;
+  w = ((priv->x2 | 0x0007) - x) + 1;
+  h = (priv->y2 - y) + 1;
+
+  /* After a failed refresh glass_fb cannot be trusted to tell what needs
+   * redrawing, and the full refresh that follows redraws everything anyway.
+   */
+
+  if (!priv->stale && !uc8253_trim(priv, &x, &y, &w, &h))
+    {
+      uc8253_cleandirty(priv);
+      nxmutex_unlock(&priv->fblock);
+      goto out;
+    }
+
+#ifdef CONFIG_LCD_UC8253_PARTIAL
+  /* A partial refresh leaves the rest of the screen alone, so it is worth
+   * using whenever the change does not cover the whole panel.  It does
+   * leave a little ghosting behind, so a full refresh is forced every so
+   * often to clean it up.
+   */
+
+  partial = !priv->stale &&
+            (x > 0 || y > 0 || w < UC8253_XRES || h < UC8253_YRES) &&
+            (CONFIG_LCD_UC8253_FULL_EVERY == 0 ||
+             priv->partials < CONFIG_LCD_UC8253_FULL_EVERY);
+#endif
+
+  uc8253_cleandirty(priv);
+  uc8253_lock(priv);
+
+#ifdef CONFIG_LCD_UC8253_PARTIAL
+  if (partial)
+    {
+      /* Previous frame first, while glass_fb still holds it, then the new
+       * rectangle, then select the same window for the refresh.
+       */
+
+      uc8253_sendwindow(priv, UC8253_DTM1, x, y, w, h);
+
+      for (row = y; row < y + h; row++)
+        {
+          memcpy(priv->glass_fb + row * UC8253_ROWSIZE + (x >> 3),
+                 priv->shadow_fb + row * UC8253_ROWSIZE + (x >> 3),
+                 w >> 3);
+        }
+
+      nxmutex_unlock(&priv->fblock);
+
+      uc8253_sendwindow(priv, UC8253_DTM2, x, y, w, h);
+      uc8253_sendcmd(priv, UC8253_PTIN);
+      uc8253_setwindow(priv, x, y, w, h);
+    }
+  else
+#endif
+    {
+      UNUSED(row);
+      memcpy(priv->glass_fb, priv->shadow_fb, UC8253_FBSIZE);
+      nxmutex_unlock(&priv->fblock);
+
+      uc8253_sendcmd(priv, UC8253_DTM1);
+      uc8253_senddata(priv, priv->glass_fb, UC8253_FBSIZE);
+      uc8253_sendcmd(priv, UC8253_DTM2);
+      uc8253_senddata(priv, priv->glass_fb, UC8253_FBSIZE);
+    }
+
+  ret = uc8253_start(priv, partial);
+  if (ret >= 0)
+    {
+      ret = uc8253_finish(priv, partial);
+    }
+  else
+    {
+#ifdef CONFIG_LCD_UC8253_PARTIAL
+      if (partial)
+        {
+          uc8253_sendcmd(priv, UC8253_PTOUT);
+        }
+#endif
+
+      uc8253_poweroff(priv);
+      uc8253_softreset(priv);
+    }
+
   uc8253_unlock(priv);
 
-  if (ret >= 0)
+  if (ret < 0)
+    {
+      /* Keep the change, so that the next update tries again.  What the
+       * glass shows is in doubt now, and a partial refresh would take
+       * glass_fb at its word, so make that a full one.
+       */
+
+      priv->stale = true;
+      nxmutex_lock(&priv->fblock);
+      uc8253_dirty(priv, x, y, x + w - 1, y + h - 1);
+      nxmutex_unlock(&priv->fblock);
+    }
+  else if (partial)
     {
       priv->partials++;
     }
+  else
+    {
+      priv->partials = 0;
+      priv->stale    = false;
+    }
 
+out:
+  nxmutex_unlock(&priv->panel);
   return ret;
 }
 
-#endif /* CONFIG_LCD_UC8253_PARTIAL */
+#ifdef CONFIG_LCD_UC8253_ASYNC
+
+/****************************************************************************
+ * Name: uc8253_kick
+ *
+ * Description:
+ *   Wake the refresh thread.  One pending wake-up is enough: the refresh
+ *   picks up everything drawn up to the moment it copies the dirty rows out.
+ *
+ ****************************************************************************/
+
+static void uc8253_kick(FAR struct uc8253_dev_s *priv)
+{
+  int count;
+
+  nxsem_get_value(&priv->kick, &count);
+  if (count < 1)
+    {
+      nxsem_post(&priv->kick);
+    }
+}
+
+/****************************************************************************
+ * Name: uc8253_thread
+ *
+ * Description:
+ *   Refresh the panel whenever redraw() asks for it.  An e-paper refresh
+ *   takes most of a second, and a caller drawing a little at a time (a
+ *   terminal draws a glyph, then moves its cursor) would otherwise wait out
+ *   one refresh per call.  Here each call only records that there is work;
+ *   the thread waits briefly for a burst of drawing to finish and pushes
+ *   all of it in one refresh.  Anything drawn while that refresh runs rides
+ *   along with the next one.
+ *
+ ****************************************************************************/
+
+static int uc8253_thread(int argc, FAR char *argv[])
+{
+  FAR struct uc8253_dev_s *priv = &g_epaperdev;
+
+  for (; ; )
+    {
+      nxsem_wait_uninterruptible(&priv->kick);
+
+#if CONFIG_LCD_UC8253_ASYNC_DELAY > 0
+      nxsched_usleep(CONFIG_LCD_UC8253_ASYNC_DELAY * 1000);
+#endif
+
+      uc8253_update(priv);
+    }
+
+  return OK;
+}
+
+#endif /* CONFIG_LCD_UC8253_ASYNC */
 
 /****************************************************************************
  * Name: uc8253_putrun
@@ -888,10 +1273,15 @@ static int uc8253_putrun(FAR struct lcd_dev_s *dev, fb_coord_t row,
       npixels = UC8253_XRES - col;
     }
 
+  nxmutex_lock(&priv->fblock);
   uc8253_bitcpy(priv->shadow_fb + row * UC8253_ROWSIZE + (col >> 3),
                 col & 7, buffer, npixels);
-
   uc8253_dirty(priv, col, row, col + npixels - 1, row);
+  nxmutex_unlock(&priv->fblock);
+
+#ifdef CONFIG_LCD_UC8253_AUTOREFRESH
+  uc8253_kick(priv);
+#endif
 
   return OK;
 }
@@ -932,6 +1322,8 @@ static int uc8253_putarea(FAR struct lcd_dev_s *dev, fb_coord_t row_start,
 
   npixels = col_end - col_start + 1;
 
+  nxmutex_lock(&priv->fblock);
+
   for (row = row_start; row <= row_end; row++)
     {
       FAR uint8_t *dst = priv->shadow_fb + row * UC8253_ROWSIZE +
@@ -942,6 +1334,11 @@ static int uc8253_putarea(FAR struct lcd_dev_s *dev, fb_coord_t row_start,
     }
 
   uc8253_dirty(priv, col_start, row_start, col_end, row_end);
+  nxmutex_unlock(&priv->fblock);
+
+#ifdef CONFIG_LCD_UC8253_AUTOREFRESH
+  uc8253_kick(priv);
+#endif
 
   return OK;
 }
@@ -974,6 +1371,7 @@ static int uc8253_getrun(FAR struct lcd_dev_s *dev, fb_coord_t row,
       npixels = UC8253_XRES - col;
     }
 
+  nxmutex_lock(&priv->fblock);
   src = priv->shadow_fb + row * UC8253_ROWSIZE;
 
   /* Assemble the run most significant bit first, starting at "col" */
@@ -991,6 +1389,7 @@ static int uc8253_getrun(FAR struct lcd_dev_s *dev, fb_coord_t row,
       buffer[i >> 3] |= (uint8_t)(pixel << (7 - (i & 7)));
     }
 
+  nxmutex_unlock(&priv->fblock);
   return OK;
 }
 
@@ -1001,7 +1400,6 @@ static int uc8253_getrun(FAR struct lcd_dev_s *dev, fb_coord_t row,
 static int uc8253_redraw(FAR struct lcd_dev_s *dev)
 {
   FAR struct uc8253_dev_s *priv = (FAR struct uc8253_dev_s *)dev;
-  int ret;
 
   if (!priv->on)
     {
@@ -1009,61 +1407,32 @@ static int uc8253_redraw(FAR struct lcd_dev_s *dev)
       return -EPERM;
     }
 
-  if (!priv->configured)
-    {
-      ret = uc8253_configure(priv);
-      if (ret < 0)
-        {
-          return ret;
-        }
-    }
+  nxmutex_lock(&priv->fblock);
 
-  if (priv->initial)
+  if (!priv->known && !priv->dropped)
     {
       /* The LCD framebuffer front end flushes its framebuffer as soon as it
        * registers, and that buffer has just been allocated and zeroed, which
        * on this panel means every pixel black.  Nobody asked for a black
-       * screen, so the first refresh after a reset is taken as a clear: the
-       * panel is driven to white and that frame is dropped.  Doing it this
-       * way also leaves the controller's "previous" buffer defined, which
-       * every later differential refresh needs.
+       * screen, so the first redraw after a reset is taken as a clear: the
+       * panel is driven to white and that frame is dropped.  The shadow is
+       * set to white as well, so that it keeps matching the glass; a later
+       * full refresh would otherwise bring the dropped frame back.
        */
 
-      ret = uc8253_clear(priv);
       uc8253_cleandirty(priv);
-      return ret;
+      memset(priv->shadow_fb, 0xff, UC8253_FBSIZE);
+      priv->dropped = true;
     }
 
-  if (priv->x1 > priv->x2)
-    {
-      /* Nothing has been drawn since the last refresh.  Refreshing anyway
-       * would cost a second and wear the panel for no reason.
-       */
+  nxmutex_unlock(&priv->fblock);
 
-      return OK;
-    }
-
-#ifdef CONFIG_LCD_UC8253_PARTIAL
-  /* A partial refresh leaves the rest of the screen alone, so it is worth
-   * using whenever the change does not cover the whole panel.  It does
-   * leave a little ghosting behind, so a full refresh is forced every so
-   * often to clean it up.
-   */
-
-  if ((priv->x1 > 0 || priv->y1 > 0 ||
-       priv->x2 < UC8253_XRES - 1 || priv->y2 < UC8253_YRES - 1) &&
-      (CONFIG_LCD_UC8253_FULL_EVERY == 0 ||
-       priv->partials < CONFIG_LCD_UC8253_FULL_EVERY))
-    {
-      ret = uc8253_refreshpart(priv);
-      uc8253_cleandirty(priv);
-      return ret;
-    }
+#ifdef CONFIG_LCD_UC8253_ASYNC
+  uc8253_kick(priv);
+  return OK;
+#else
+  return uc8253_update(priv);
 #endif
-
-  ret = uc8253_refresh(priv);
-  uc8253_cleandirty(priv);
-  return ret;
 }
 
 /****************************************************************************
@@ -1120,24 +1489,32 @@ static int uc8253_setpower(FAR struct lcd_dev_s *dev, int power)
 
   lcdinfo("power: %d -> %d\n", priv->on ? CONFIG_LCD_MAXPOWER : 0, power);
 
+  int ret = OK;
+
+  /* Wait for any refresh in progress, so the panel is never put to sleep
+   * half way through one.
+   */
+
+  nxmutex_lock(&priv->panel);
+
   if (power > 0)
     {
       if (!priv->configured)
         {
-          int ret = uc8253_configure(priv);
-
-          if (ret < 0)
-            {
-              return ret;
-            }
+          ret = uc8253_configure(priv);
         }
 
-      priv->on = true;
+      if (ret >= 0)
+        {
+          priv->on = true;
+        }
     }
   else if (priv->on)
     {
       /* Deep sleep needs the check code, and only takes effect once the
-       * driving voltages are off.
+       * driving voltages are off.  The controller loses its RAM, but the
+       * glass keeps its image, so on wake-up the controller is reseeded
+       * from the shadow framebuffer rather than cleared.
        */
 
       uc8253_lock(priv);
@@ -1149,7 +1526,8 @@ static int uc8253_setpower(FAR struct lcd_dev_s *dev, int power)
       priv->configured = false;
     }
 
-  return OK;
+  nxmutex_unlock(&priv->panel);
+  return ret;
 }
 
 /****************************************************************************
@@ -1179,13 +1557,20 @@ uc8253_initialize(FAR struct spi_dev_s *spi,
   priv->on         = false;
   priv->configured = false;
   priv->initial    = true;
+  priv->known      = false;
+  priv->dropped    = false;
+  priv->stale      = false;
   priv->partials   = 0;
+
+  nxmutex_init(&priv->panel);
+  nxmutex_init(&priv->fblock);
 
   uc8253_cleandirty(priv);
 
   /* Start from a white screen.  A set bit is white on this panel. */
 
   memset(priv->shadow_fb, 0xff, UC8253_FBSIZE);
+  memset(priv->glass_fb, 0xff, UC8253_FBSIZE);
 
   /* Reset and configure the controller, but leave the glass alone: a
    * refresh takes about a second and the caller decides when to pay for
@@ -1198,6 +1583,19 @@ uc8253_initialize(FAR struct spi_dev_s *spi,
       lcderr("ERROR: Failed to power up the panel: %d\n", ret);
       return NULL;
     }
+
+#ifdef CONFIG_LCD_UC8253_ASYNC
+  nxsem_init(&priv->kick, 0, 0);
+
+  ret = kthread_create("uc8253", CONFIG_LCD_UC8253_THREAD_PRIORITY,
+                       CONFIG_LCD_UC8253_THREAD_STACKSIZE, uc8253_thread,
+                       NULL);
+  if (ret < 0)
+    {
+      lcderr("ERROR: Failed to start the refresh thread: %d\n", ret);
+      return NULL;
+    }
+#endif
 
   lcdinfo("UC8253 ready: %dx%d, %d bpp\n",
           UC8253_XRES, UC8253_YRES, UC8253_BPP);

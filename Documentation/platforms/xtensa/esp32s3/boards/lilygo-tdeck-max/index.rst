@@ -204,10 +204,10 @@ full
 ----
 
 Everything the board can currently do at once: the e-paper panel, both
-backlights, the keyboard, Wi-Fi and Bluetooth LE, with the ``fb``, ``pwm``
-and ``kbd`` examples.  This is the configuration to use on the device
-itself; ``nsh`` stays as the minimal one to fall back to when something
-needs to be bisected.
+backlights, the keyboard, a terminal on the panel and keyboard, Wi-Fi and
+Bluetooth LE, with the ``fb``, ``pwm``, ``kbd`` and ``nxterm`` examples.
+This is the configuration to use on the device itself; ``nsh`` stays as the
+minimal one to fall back to when something needs to be bisected.
 
 The panel is a GoodDisplay GDEQ031T10, a 3.1 inch 240x320 monochrome panel
 driven by a UC8253 controller, on the SPI2 bus it shares with the microSD
@@ -252,12 +252,19 @@ end) and as ``/dev/lcd0``::
 
     nsh> fb -p smpte
 
-Refreshing e-paper takes about a second and wears the panel, so the driver
-never refreshes on its own.  ``putrun`` and ``putarea`` only update a shadow
-framebuffer, and the panel is written and refreshed when ``redraw`` is
-called, which through ``/dev/fb0`` is an ``FBIO_UPDATE`` ioctl.  An
-application therefore draws as often as it likes and pays for one refresh
-when it asks for one.
+Refreshing e-paper takes about a second and wears the panel.  ``putrun``
+and ``putarea`` only update a shadow framebuffer; what pushes it to the
+panel depends on two options, both enabled in this configuration:
+
+* ``LCD_UC8253_ASYNC`` moves refreshes to a kernel thread (``uc8253``), so
+  a caller never waits out the second.  Updates that arrive while a refresh
+  runs are merged into the next one.
+* ``LCD_UC8253_AUTOREFRESH`` lets drawing itself wake that thread.  NX
+  needs it, because it never asks the driver for a refresh.
+
+With both disabled the panel is written and refreshed only when ``redraw``
+is called, which through ``/dev/fb0`` is an ``FBIO_UPDATE`` ioctl, and the
+caller waits for it.
 
 A few properties worth knowing:
 
@@ -272,8 +279,9 @@ A few properties worth knowing:
   deliberate.  ``up_fbinitialize()`` flushes the framebuffer as soon as it
   registers, and that buffer has just been allocated with ``kmm_zalloc``,
   so it is all zeroes, which on this panel is every pixel black.  Without
-  this the board would paint its screen black on every boot.  Clearing
-  instead costs about 1.2 s of boot time.
+  this the board would paint its screen black on every boot.  With
+  ``LCD_UC8253_ASYNC`` the clear runs in the refresh thread and boot does
+  not wait for it; synchronously it costs about 1.2 s.
 * ``LCD_UC8253_FASTUPDATE`` (on by default) forces the waveform the
   controller would pick at a high temperature, which shortens a full
   refresh from about 3 s to about 1 s.  Turn it off if the panel has to
@@ -282,22 +290,24 @@ A few properties worth knowing:
   documented 1.015 s for the fast waveform.  That timing is the easiest way
   to tell the BUSY line is really being polled: a driver falling back on
   fixed delays would take the full 8 s timeout instead.
-* ``LCD_UC8253_PARTIAL`` (on by default) refreshes only the rectangle that
-  changed.  The driver tracks that rectangle across ``putrun`` and
-  ``putarea`` calls and picks a partial refresh whenever the change does
-  not cover the whole panel.  Measured at about 0.80 s against 1.00 s for
-  a full one, but the real gain is that the rest of the screen is left
-  alone: a full refresh inverts the entire panel on its way to the new
-  image, which is very visible.
+* ``LCD_UC8253_PARTIAL`` (on by default) refreshes only what changed.  The
+  driver keeps a copy of what the glass shows, and refreshes the rectangle
+  where the new drawing differs from it; if nothing differs there is no
+  refresh at all.  Measured at about 0.80 s against 1.00 s for a full one,
+  but the real gain is that the rest of the screen is left alone: a full
+  refresh inverts the entire panel on its way to the new image, which is
+  very visible.
 * Partial refreshes accumulate ghosting, so ``LCD_UC8253_FULL_EVERY``
   (16 by default) forces a full one periodically.  Set it to 0 to leave
   that entirely to the application.
-* Through ``/dev/fb0`` the refreshed region is whatever area is passed to
-  ``FBIO_UPDATE``, not a comparison of the pixels: ``lcd_framebuffer.c``
-  always calls ``putarea`` over that area before ``redraw``, so it is
-  always dirty.  Pass a tight area to get a tight partial refresh.  The
-  driver's "nothing changed, skip the refresh" path is therefore only
-  reachable through ``/dev/lcd0``.
+* The controller does **not** keep its own "previous frame".  A partial
+  refresh only moves pixels whose previous and current values differ, and
+  the UC8253 leaves the previous buffer as it was after a refresh.  Every
+  partial refresh therefore writes both, the previous one from the
+  driver's copy of the glass.  The driver also soft resets the controller
+  after every refresh, as the vendor's code does ("needed, reason
+  unknown").  Before these two changes, erased pixels never turned white
+  and larger updates often did not appear; both cleared up together.
 
 Backlights
 ==========
@@ -346,9 +356,10 @@ Layers follow what is printed on the keys.  Holding shift gives capitals,
 holding ``sym`` gives the digits and punctuation layer, and ``ALT`` toggles
 the shift layer on and off like a caps lock.  ``sym`` wins when both are
 held.  Modifiers are handled inside the driver and are never reported.
-Backspace, enter and space are reported as their ASCII values rather than as
-special keycodes, because everything that reads this keyboard wants to treat
-them as characters.
+Space is reported as its ASCII value.  Enter and backspace are reported as
+special keycodes (``KEYBOARD_SPECPRESS`` with ``KEYCODE_ENTER`` and
+``KEYCODE_BACKDEL``), so that each reader applies its own convention; the
+terminal turns them into a newline and DEL.
 
 Where a layer has nothing at a position, the base layer is used instead, so
 the modifiers and the digit key keep working in every layer.
@@ -368,6 +379,51 @@ the modifiers and the digit key keep working in every layer.
    refresh that fails or times out does **not** surface as an
    ``FBIO_UPDATE`` error.  Do not read a successful ioctl as proof that the
    panel updated; time it instead.
+
+On-device terminal
+==================
+
+In the ``full`` configuration the panel and the keyboard form a terminal
+running NSH, so the device can be used without a computer.  It starts at
+boot and is independent of the USB console, which keeps its own shell.
+
+``nxterm`` (``apps/examples/nxterm``) draws the text through NX onto
+``/dev/lcd0`` in the X11 6x13 font.  Its NSH session runs on a
+pseudo-terminal, and a bridge task, ``NxTermPTY``, turns ``/dev/kbd0`` events
+into input for that session and passes the session's output to the screen.
+
+The terminal is started by NxInit.  The board carries its own
+``src/etc/init.d/init.rc``, which replaces the common ESP32-S3 one (the
+board directory comes first on the build's ``VPATH``) and adds a
+``terminal`` service when ``LILYGO_TDECK_MAX_BOOT_TERMINAL`` is enabled.
+The service discards nxterm's start-up messages; if the screen stays blank,
+disable the option and run ``nxterm`` from the USB console to see them.
+
+* A keystroke costs a small partial refresh of about 0.7 s.  Keys typed
+  faster than that are merged into one refresh.  Output that scrolls redraws
+  most of the screen as one partial refresh, and every sixteenth refresh is
+  a full one, which flashes.
+* Typing ``exit`` ends the terminal until the next reset.  In PTY mode
+  nxterm leaves its window, ``/dev/nxterm0`` and the bridge task behind
+  when its shell ends, so it cannot simply be started again; the service is
+  ``oneshot`` for that reason.
+
+.. warning::
+
+   Use NX in LCD mode (``NX_LCDDRIVER``, the default) at 1 bpp.  In
+   framebuffer mode NX's fill code is broken below 8 bpp: it writes the raw
+   colour where it should repeat the pixel across the byte, and uses a pixel
+   count as a byte count.  On this panel that drew vertical stripes and no
+   text.
+
+Colours at 1 bpp default to 0, which is black on this panel.  The
+configuration sets ``NX_BGCOLOR`` and the NxTK border colours to 1, white,
+or every start would first paint the screen black.
+
+``NSH_DISABLE_ECHOBACK`` must stay disabled.  NuttX's ``readline`` echoes
+only its own line edits and leaves ordinary characters to the terminal
+driver's ``ECHO`` flag, so the option switches echo off altogether on the
+terminal's pseudo-terminal.
 
 Memory model with the radios enabled
 ====================================
@@ -426,6 +482,12 @@ Verified on hardware (2026-09-20/21):
   and advertising starts.
 * Wi-Fi and BLE scanning concurrently, both returning results, with the
   coexistence arbiter enabled.
+* The e-paper panel: full and partial refreshes, including erasing, and the
+  first refresh after boot clearing it to white.
+* Both backlights, and every layer and modifier of the keyboard.
+* The on-device terminal: it starts at boot, shows the NSH banner and
+  prompt, echoes typed characters, handles backspace and shows command
+  output.
 
 Not verified:
 
@@ -450,6 +512,5 @@ Not verified:
   has succeeded, with Wi-Fi both up and down.
 * The debug session through the VS Code UI (only OpenOCD and GDB were driven).
 
-Not implemented yet: drivers for the e-paper, touch, keyboard, IMU, haptic
-driver, charger and fuel gauge, the ES8311 audio path, PWM backlights, Wi-Fi
-and Bluetooth LE.
+Not implemented yet: drivers for touch, the IMU, the haptic driver, the
+charger and fuel gauge, and the ES8311 audio path.

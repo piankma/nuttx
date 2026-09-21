@@ -43,6 +43,7 @@
 
 #include <nuttx/irq.h>
 #include <nuttx/i2c/i2c_master.h>
+#include <nuttx/input/kbd_codec.h>
 #include <nuttx/input/tca8418.h>
 
 #include <arch/board/board.h>
@@ -61,13 +62,16 @@
 #define TDECKMAX_KBD_ROWS   4
 #define TDECKMAX_KBD_COLS   10
 
-/* The keys that are not letters.  Backspace, enter and space are given as
- * their ASCII values rather than as special keycodes: everything that reads
- * this keyboard wants to treat them as characters.
+/* The keys that are not letters.  Enter and backspace are reported as
+ * special keys rather than as characters, because what they should produce
+ * depends on who is listening: a terminal wants "\n" for enter and DEL for
+ * backspace (the NxTerm PTY bridge translates them so), while a toolkit
+ * like LVGL has key codes of its own.  A raw "\r" from the keyboard, for
+ * one, never ends a line in NSH.
  */
 
-#define KBD_BS              0x08
-#define KBD_CR              '\r'
+#define KBD_BS              TCA8418_SPEC(KEYCODE_BACKDEL)
+#define KBD_CR              TCA8418_SPEC(KEYCODE_ENTER)
 #define KBD_SP              ' '
 #define KBD__                TCA8418_NONE
 

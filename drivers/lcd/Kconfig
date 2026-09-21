@@ -2013,6 +2013,61 @@ config LCD_UC8253_PARTIAL
 		ghosts if they are repeated indefinitely.  See
 		LCD_UC8253_FULL_EVERY.
 
+config LCD_UC8253_ASYNC
+	bool "UC8253 refresh from a thread"
+	default n
+	---help---
+		Refresh the panel from a dedicated thread, instead of in whatever
+		called redraw() (an FBIO_UPDATE on /dev/fb0).
+
+		A refresh takes most of a second.  Synchronously, a caller that
+		draws a little at a time pays that for every call: NX, for one,
+		updates the display for each glyph and again for the cursor, so a
+		terminal spends seconds on every keystroke.  With this option
+		redraw() only records that there is work and returns at once;
+		the thread waits briefly for a burst of drawing to end and pushes
+		all of it in one refresh, and anything drawn while that refresh
+		runs goes out with the next.
+
+		The catch is that FBIO_UPDATE no longer means the panel shows the
+		new image when it returns.
+
+if LCD_UC8253_ASYNC
+
+config LCD_UC8253_ASYNC_DELAY
+	int "UC8253 refresh delay (ms)"
+	default 30
+	range 0 1000
+	---help---
+		How long the thread waits after being woken before refreshing, so
+		that a burst of updates goes out as one refresh.
+
+config LCD_UC8253_AUTOREFRESH
+	bool "UC8253 refresh after drawing"
+	default n
+	---help---
+		Refresh the panel whenever something is drawn, without waiting
+		for redraw() to be called.
+
+		This is what NX in LCD driver mode (NX_LCDDRIVER) needs: it draws
+		through putrun() and never asks for a redraw, so without this
+		nothing it draws would ever reach the glass.  The refresh is
+		still coalesced, so a burst of drawing costs one refresh.
+
+		It gives up the driver's usual promise that nothing is refreshed
+		until the caller asks.  A caller drawing slowly, piece by piece,
+		gets intermediate refreshes.
+
+config LCD_UC8253_THREAD_PRIORITY
+	int "UC8253 refresh thread priority"
+	default 100
+
+config LCD_UC8253_THREAD_STACKSIZE
+	int "UC8253 refresh thread stack size"
+	default DEFAULT_TASK_STACKSIZE
+
+endif # LCD_UC8253_ASYNC
+
 config LCD_UC8253_FULL_EVERY
 	int "UC8253 full refresh interval"
 	default 16

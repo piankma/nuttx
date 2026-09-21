@@ -74,4 +74,21 @@ config LILYGO_TDECK_MAX_BOOT_BLE
 
 		There is no way to take it down again short of a reset.
 
+config LILYGO_TDECK_MAX_BOOT_TERMINAL
+	bool "Start the on-device terminal at boot"
+	default y
+	depends on EXAMPLES_NXTERM && SYSTEM_NXINIT
+	---help---
+		Start nxterm at boot, as an NxInit service, so that the e-paper
+		and the keyboard work as a terminal without a computer attached.
+		The USB console is unaffected and runs its own shell.
+
+		nxterm's start-up messages are discarded.  If the screen stays
+		blank, disable this and run nxterm by hand from the USB console to
+		see them.
+
+		The terminal is started once.  Typing exit on the device ends it
+		until the next reset: nxterm does not tidy up after its shell, so
+		it cannot simply be restarted.
+
 endif # ARCH_BOARD_LILYGO_TDECK_MAX

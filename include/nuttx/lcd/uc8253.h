@@ -45,6 +45,9 @@
  * CONFIG_LCD_UC8253_FASTUPDATE - Override the temperature the controller
  *                               picks its waveform for, which shortens a
  *                               full refresh from about 3 s to about 1 s.
+ * CONFIG_LCD_UC8253_ASYNC     - Refresh from a dedicated thread, so that
+ *                               redraw() returns at once and a burst of
+ *                               small updates costs one refresh.
  *
  * Required LCD driver settings:
  *
