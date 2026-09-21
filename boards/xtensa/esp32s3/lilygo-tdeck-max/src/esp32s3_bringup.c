@@ -46,18 +46,6 @@
 #  include "esp32s3_board_sdmmc.h"
 #endif
 
-#ifdef CONFIG_ESPRESSIF_WIFI
-#  include "esp32s3_board_wlan.h"
-#endif
-
-#ifdef CONFIG_ESPRESSIF_BLE
-#  include "esp32s3_ble.h"
-#endif
-
-#ifdef CONFIG_ESPRESSIF_WIFI_BT_COEXIST
-#  include "esp32s3_wifi_adapter.h"
-#endif
-
 #ifdef CONFIG_ESPRESSIF_LEDC
 #  include "esp32s3_board_ledc.h"
 #endif
@@ -164,6 +152,18 @@ int esp32s3_bringup(void)
     }
 #endif
 
+#ifdef CONFIG_INPUT_TCA8418
+  /* Register /dev/kbd0.  The XL9555 has already released the keyboard's
+   * reset line above, which the scanner needs before it will answer.
+   */
+
+  ret = tdeckmax_keyboard_initialize();
+  if (ret < 0)
+    {
+      syslog(LOG_ERR, "ERROR: Failed to initialize the keyboard: %d\n", ret);
+    }
+#endif
+
 #ifdef CONFIG_ESPRESSIF_LEDC
   /* Register /dev/pwm0.  Channel 0 is the e-paper frontlight and channel 1
    * is the keyboard backlight; both are off until something drives them.
@@ -209,38 +209,16 @@ int esp32s3_bringup(void)
 #endif
 
 #ifdef CONFIG_ESPRESSIF_WIRELESS
-  /* The radios share one antenna and one set of low-level resources, so the
-   * coexistence arbiter has to be started before either of them.
+  /* Offer the radios as devices and bring up any the board is configured to
+   * have running at boot.  By default neither is: see esp32s3_radios.c.
    */
 
-#ifdef CONFIG_ESPRESSIF_WIFI_BT_COEXIST
-  ret = esp_wifi_bt_coexist_init();
+  ret = tdeckmax_radios_initialize();
   if (ret < 0)
     {
-      syslog(LOG_ERR, "ERROR: Failed to init Wi-Fi/BT coexistence: %d\n",
-             ret);
+      syslog(LOG_ERR, "ERROR: Failed to initialize the radios: %d\n", ret);
     }
 #endif
-
-#ifdef CONFIG_ESPRESSIF_BLE
-  ret = esp32s3_ble_initialize();
-  if (ret < 0)
-    {
-      syslog(LOG_ERR, "ERROR: Failed to initialize BLE: %d\n", ret);
-    }
-#endif
-
-#ifdef CONFIG_ESPRESSIF_WIFI
-  /* Registers the wlan0 network device (CONFIG_NETDEV_LATEINIT) */
-
-  ret = board_wlan_init();
-  if (ret < 0)
-    {
-      syslog(LOG_ERR, "ERROR: Failed to initialize Wi-Fi: %d\n", ret);
-    }
-#endif
-
-#endif /* CONFIG_ESPRESSIF_WIRELESS */
 
   UNUSED(ret);
   return OK;

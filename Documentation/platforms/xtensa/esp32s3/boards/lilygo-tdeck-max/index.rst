@@ -200,13 +200,22 @@ checking that TCP works end to end.  It takes a numeric address only::
    to it, including iPhone Personal Hotspots unless "Maximize Compatibility"
    is enabled.
 
-epaper
-------
+full
+----
 
-``nsh`` plus the e-paper panel and the ``fb`` example.  The board carries a
-GoodDisplay GDEQ031T10, a 3.1 inch 240x320 monochrome panel driven by a
-UC8253 controller, on the SPI2 bus it shares with the microSD slot and the
-SX1262.  The driver is ``drivers/lcd/uc8253.c``.
+Everything the board can currently do at once: the e-paper panel, both
+backlights, the keyboard, Wi-Fi and Bluetooth LE, with the ``fb``, ``pwm``
+and ``kbd`` examples.  This is the configuration to use on the device
+itself; ``nsh`` stays as the minimal one to fall back to when something
+needs to be bisected.
+
+The panel is a GoodDisplay GDEQ031T10, a 3.1 inch 240x320 monochrome panel
+driven by a UC8253 controller, on the SPI2 bus it shares with the microSD
+slot and the SX1262.  The driver is ``drivers/lcd/uc8253.c``.
+
+Adding the radios does not slow the panel down: a full refresh still
+measures 1.00 s with Wi-Fi and BLE up.  It does change the memory model,
+see below, which leaves about 140 KB of the internal heap free.
 
 The panel appears both as ``/dev/fb0`` (through the LCD framebuffer front
 end) and as ``/dev/lcd0``::
@@ -273,6 +282,55 @@ the e-paper frontlight (GPIO41) and channel 2 is the keyboard backlight
 ``PWM_NCHANNELS`` must be at least 2.  With it left at 1 the LEDC driver
 collapses the timer to a single channel and the keyboard backlight is never
 driven.
+
+Keyboard
+========
+
+The thumb keyboard is a 4x10 matrix scanned by a TCA8418 at I2C address
+0x34, with its interrupt on GPIO15 and its reset on the XL9555.  The driver
+is ``drivers/input/tca8418.c`` and it registers ``/dev/kbd0``::
+
+    nsh> kbd 6
+
+(The ``keyboard`` example builds under the program name ``kbd``.)  Each key
+produces a press and a release event carrying its character.
+
+The driver is interrupt driven rather than polled: the handler masks the
+line, a work queue job drains the controller's event FIFO over I2C, and the
+line is unmasked afterwards.  A key pressed between the last FIFO read and
+the acknowledge would otherwise be left waiting with the interrupt line
+already released and no edge coming, so the worker re-checks the event
+counter and reschedules itself rather than lose it.
+
+Two details of this board are easy to get wrong:
+
+* **The matrix columns are wired in reverse.**  Column 0 of the keymap is
+  the rightmost column of the matrix, which ``colreverse`` in the board
+  configuration accounts for.  Without it every letter comes out mirrored
+  across the keyboard.
+* **The key the vendor's code calls "UP" is the shift key**, the one with
+  the arrow printed on it.  There are two of them, at either end of the
+  bottom row.
+
+Layers follow what is printed on the keys.  Holding shift gives capitals,
+holding ``sym`` gives the digits and punctuation layer, and ``ALT`` toggles
+the shift layer on and off like a caps lock.  ``sym`` wins when both are
+held.  Modifiers are handled inside the driver and are never reported.
+Backspace, enter and space are reported as their ASCII values rather than as
+special keycodes, because everything that reads this keyboard wants to treat
+them as characters.
+
+Where a layer has nothing at a position, the base layer is used instead, so
+the modifiers and the digit key keep working in every layer.
+
+.. note::
+
+   Only the key scanner may raise events.  The pins outside the matrix are
+   left with their GPI event mode and interrupts disabled, because they are
+   usually unconnected: a floating pin allowed into the event FIFO produces
+   phantom keys and a stream of interrupts with no key behind them.  Some
+   vendor libraries enable all of them, which is safe only on a board where
+   every pin is wired.
 
 .. note::
 

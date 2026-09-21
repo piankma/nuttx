@@ -47,8 +47,6 @@
  * Pre-processor Definitions
  ****************************************************************************/
 
-#define TDECKMAX_I2C_PORT 0
-
 #ifdef CONFIG_LILYGO_TDECK_MAX_BOOT_LORA_POWER
 #  define LORA_BOOT_LEVEL true
 #else

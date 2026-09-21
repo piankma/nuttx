@@ -13,6 +13,14 @@ config LILYGO_TDECK_MAX_XL9555_FREQUENCY
 		I2C bus frequency used to talk to the XL9555 I/O expander, which
 		gates the power of most peripherals on the T-Deck Max.
 
+config LILYGO_TDECK_MAX_TCA8418_FREQUENCY
+	int "TCA8418 I2C frequency (Hz)"
+	default 400000
+	depends on INPUT_TCA8418
+	---help---
+		I2C bus frequency used to talk to the TCA8418, the scanner behind
+		the T-Deck Max keyboard.
+
 config LILYGO_TDECK_MAX_BOOT_LORA_POWER
 	bool "Power the SX1262 LoRa module at boot"
 	default n
@@ -28,5 +36,42 @@ config LILYGO_TDECK_MAX_BOOT_GPS_POWER
 	---help---
 		The GPS rail (XL9555 P02) is left off by default to save power.
 		The rail can also be switched at runtime through /dev/gps_en.
+
+config LILYGO_TDECK_MAX_BOOT_WIFI
+	bool "Bring up Wi-Fi at boot"
+	default n
+	depends on ESPRESSIF_WIFI
+	---help---
+		Wi-Fi is left uninitialised by default.  Initialising it takes a
+		large part of the internal heap, and the network stack starts the
+		radio when it brings wlan0 up, so an idle handheld would otherwise
+		keep it running for nothing.
+
+		It can be brought up at runtime instead:
+
+		    gpio -o 1 /dev/wifi_en
+		    ifup wlan0
+
+		There is no way to take it down again short of a reset, although
+		ifdown and ifup stop and start the radio once it is up.
+
+		Bringing it up at boot needs BOARD_INITTHREAD_STACKSIZE of at
+		least 4096.  Anything smaller is refused at build time, because
+		the failure is a silent reset loop.
+
+config LILYGO_TDECK_MAX_BOOT_BLE
+	bool "Bring up Bluetooth LE at boot"
+	default n
+	depends on ESPRESSIF_BLE
+	---help---
+		BLE is left uninitialised by default: bringing it up enables the
+		controller, which stays enabled.
+
+		It can be brought up at runtime instead:
+
+		    gpio -o 1 /dev/ble_en
+		    ifup bnep0
+
+		There is no way to take it down again short of a reset.
 
 endif # ARCH_BOARD_LILYGO_TDECK_MAX
