@@ -21,6 +21,40 @@ config LILYGO_TDECK_MAX_TCA8418_FREQUENCY
 		I2C bus frequency used to talk to the TCA8418, the scanner behind
 		the T-Deck Max keyboard.
 
+config LILYGO_TDECK_MAX_BATTERY_CAPACITY
+	int "Battery design capacity (mAh)"
+	default 1400
+	range 0 32767
+	depends on BQ27220
+	---help---
+		The capacity of the cell, which the BQ27220 fuel gauge needs to
+		turn charge into a percentage.  The T-Deck Max ships with a
+		1400 mAh cell.  The gauge keeps the value in RAM for as long as
+		the cell powers it, so it is written at boot only when it differs,
+		which takes a couple of seconds.  0 leaves the gauge alone.
+
+config LILYGO_TDECK_MAX_CHARGE_VOLTAGE
+	int "Battery charge voltage (mV)"
+	default 4288
+	range 3840 4608
+	depends on SY6970
+	---help---
+		The voltage the SY6970 charges the cell to, in steps of 16 mV.
+		4288 is what the vendor's firmware sets.  A cell rated for 4.20 V
+		is charged more gently at 4208, the charger's own default, for a
+		few percent less capacity.
+
+config LILYGO_TDECK_MAX_CHARGE_CURRENT
+	int "Battery charge current (mA)"
+	default 1024
+	range 64 5056
+	depends on SY6970
+	---help---
+		The fast charge current, in steps of 64 mA.  1024 is what the
+		vendor's firmware sets, about 0.7 C for the 1400 mAh cell.  It is
+		applied at every boot because the charger forgets it whenever the
+		battery is disconnected.
+
 config LILYGO_TDECK_MAX_BOOT_LORA_POWER
 	bool "Power the SX1262 LoRa module at boot"
 	default n

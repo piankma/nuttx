@@ -164,6 +164,16 @@ int esp32s3_bringup(void)
     }
 #endif
 
+#if defined(CONFIG_BQ27220) || defined(CONFIG_SY6970)
+  /* Register /dev/batt0 (fuel gauge) and /dev/charger0 (charger) */
+
+  ret = tdeckmax_battery_initialize();
+  if (ret < 0)
+    {
+      syslog(LOG_ERR, "ERROR: Failed to initialize the battery: %d\n", ret);
+    }
+#endif
+
 #ifdef CONFIG_ESPRESSIF_LEDC
   /* Register /dev/pwm0.  Channel 0 is the e-paper frontlight and channel 1
    * is the keyboard backlight; both are off until something drives them.

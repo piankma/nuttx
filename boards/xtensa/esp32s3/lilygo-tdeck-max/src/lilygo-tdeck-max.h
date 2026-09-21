@@ -131,6 +131,24 @@ int tdeckmax_keyboard_initialize(void);
 #endif
 
 /****************************************************************************
+ * Name: tdeckmax_battery_initialize
+ *
+ * Description:
+ *   Bring up the BQ27220 fuel gauge and the SY6970 charger, set the
+ *   battery's capacity and charge limits, and register them as /dev/batt0
+ *   and /dev/charger0.
+ *
+ * Returned Value:
+ *   Zero (OK) is returned on success; A negated errno value is returned
+ *   to indicate the nature of any failure.
+ *
+ ****************************************************************************/
+
+#if defined(CONFIG_BQ27220) || defined(CONFIG_SY6970)
+int tdeckmax_battery_initialize(void);
+#endif
+
+/****************************************************************************
  * Name: tdeckmax_radios_initialize
  *
  * Description:

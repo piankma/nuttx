@@ -380,6 +380,42 @@ the modifiers and the digit key keep working in every layer.
    ``FBIO_UPDATE`` error.  Do not read a successful ioctl as proof that the
    panel updated; time it instead.
 
+Battery
+=======
+
+The 1400 mAh cell is measured by a BQ27220 fuel gauge (I2C 0x55) and
+charged from USB by an SY6970 charger (I2C 0x6a).  The drivers are
+``drivers/power/battery/bq27220.c`` and ``drivers/power/battery/sy6970.c``,
+and the ``full`` configuration registers them as ``/dev/batt0`` and
+``/dev/charger0``::
+
+    nsh> batterydump -t 1 /dev/batt0
+    mask:0, state:3, online:1, vol:4205 mV, capacity:100%, current:0 mA, temperature:25.2 C
+    nsh> batterydump -t 0 /dev/charger0
+    mask:0, state:3, online:1, health:1, vol:4288, protocol:0
+
+The gauge reports millivolts, percent, milliamps and tenths of a degree
+Celsius.  For the gauge ``online`` means a battery is present; for the
+charger it means input power is good.
+
+Both chips are powered by the cell rather than by the ESP32-S3, so they
+keep their settings across resets of the board but lose them if the
+battery is disconnected.  The board therefore applies them at every boot:
+
+* ``LILYGO_TDECK_MAX_BATTERY_CAPACITY`` (1400 mAh) is the capacity the gauge
+  uses to turn charge into a percentage.  It is written only when the gauge
+  holds a different value, which needs the gauge unsealed and a
+  configuration update, and adds about 2 s to that one boot.
+* ``LILYGO_TDECK_MAX_CHARGE_VOLTAGE`` (4288 mV) and
+  ``LILYGO_TDECK_MAX_CHARGE_CURRENT`` (1024 mA) are the values the vendor's
+  firmware uses.  4288 mV is above the 4.20 V a standard lithium polymer
+  cell is rated for; the rating of the fitted cell is not documented.
+
+The charger driver disables the charger's I2C watchdog.  Once the host has
+written to the charger, an expired watchdog would otherwise return every
+setting to its default.  The charger's ADC is left off, as the vendor does,
+so its own voltage readings are stale; the gauge measures the battery.
+
 On-device terminal
 ==================
 
@@ -485,6 +521,11 @@ Verified on hardware (2026-09-20/21):
 * The e-paper panel: full and partial refreshes, including erasing, and the
   first refresh after boot clearing it to white.
 * Both backlights, and every layer and modifier of the keyboard.
+* Fuel gauge and charger: voltage, state of charge and temperature read
+  back; on USB the gauge reports full and the charger charge done; on the
+  battery alone the gauge reports discharging, at 102 mA with the board
+  idle; plugged back in, the charger reports charging.  The gauge's design
+  capacity is set and reads back as 1400 mAh.
 * The on-device terminal: it starts at boot, shows the NSH banner and
   prompt, echoes typed characters, handles backspace and shows command
   output.
@@ -511,6 +552,8 @@ Not verified:
   once failed with ``EIO`` (an HCI command timeout) and every attempt since
   has succeeded, with Wi-Fi both up and down.
 * The debug session through the VS Code UI (only OpenOCD and GDB were driven).
+* Charging from a mostly empty cell, and how closely the state of charge
+  follows the cell over a full discharge.
 
-Not implemented yet: drivers for touch, the IMU, the haptic driver, the
-charger and fuel gauge, and the ES8311 audio path.
+Not implemented yet: drivers for touch, the IMU, the haptic driver and the
+ES8311 audio path.
