@@ -102,6 +102,10 @@ if(CONFIG_INPUT)
     list(APPEND SRCS st7123.c)
   endif()
 
+  if(CONFIG_INPUT_CST3530)
+    list(APPEND SRCS cst3530.c)
+  endif()
+
   if(CONFIG_INPUT_BUTTONS)
     list(APPEND SRCS button_upper.c)
 

@@ -65,7 +65,7 @@
 /* I2C addresses (7-bit) */
 
 #define BOARD_I2C_ADDR_ES8311   0x18  /* Audio codec */
-#define BOARD_I2C_ADDR_TOUCH    0x1a  /* CST328/CST3530 touch controller */
+#define BOARD_I2C_ADDR_TOUCH    0x1a  /* CST3530 touch controller */
 #define BOARD_I2C_ADDR_XL9555   0x20  /* I/O expander */
 #define BOARD_I2C_ADDR_BHI260AP 0x28  /* IMU (needs 1V8_EN) */
 #define BOARD_I2C_ADDR_TCA8418  0x34  /* Keyboard matrix controller */

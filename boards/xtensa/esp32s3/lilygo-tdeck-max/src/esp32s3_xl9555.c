@@ -40,6 +40,8 @@
 
 #include <arch/board/board.h>
 
+#include "espressif/esp_gpio.h"
+#include "hardware/esp32s3_gpio_sigmap.h"
 #include "esp32s3_i2c.h"
 #include "lilygo-tdeck-max.h"
 
@@ -68,7 +70,37 @@ struct xl9555_pin_s
   uint8_t pin;                /* XL9555 pin number (0-7 = P0x, 8-15 = P1x) */
   FAR char *name;             /* Registered as /dev/<name> */
   bool initial;               /* Level driven at boot */
+
+  /* Called after the line changes, to look after the device's pins */
+
+  CODE void (*powered)(bool on);
 };
+
+/* A power rail whose device needs its ESP32-S3 pins looked after when the
+ * rail changes.  It is registered as a GPIO device of its own so that every
+ * change, whoever makes it, goes through the hook.
+ */
+
+struct xl9555_rail_s
+{
+  struct gpio_dev_s gpio;     /* Must be first */
+  FAR const struct xl9555_pin_s *pin;
+};
+
+/****************************************************************************
+ * Private Function Prototypes
+ ****************************************************************************/
+
+static void tdeckmax_lora_rail(bool on);
+static void tdeckmax_gps_rail(bool on);
+
+#ifdef CONFIG_DEV_GPIO
+static int  tdeckmax_rail_read(FAR struct gpio_dev_s *dev,
+                               FAR bool *value);
+static int  tdeckmax_rail_write(FAR struct gpio_dev_s *dev, bool value);
+static int  tdeckmax_rail_setpintype(FAR struct gpio_dev_s *dev,
+                                     enum gpio_pintype_e pintype);
+#endif
 
 /****************************************************************************
  * Private Data
@@ -86,8 +118,10 @@ struct xl9555_pin_s
 static struct xl9555_pin_s g_xl9555_pins[] =
 {
   { XL9555_PIN_MODEM_PWR,    "modem_pwr",    false },
-  { XL9555_PIN_LORA_EN,      "lora_en",      LORA_BOOT_LEVEL },
-  { XL9555_PIN_GPS_EN,       "gps_en",       GPS_BOOT_LEVEL },
+  { XL9555_PIN_LORA_EN,      "lora_en",      LORA_BOOT_LEVEL,
+    tdeckmax_lora_rail },
+  { XL9555_PIN_GPS_EN,       "gps_en",       GPS_BOOT_LEVEL,
+    tdeckmax_gps_rail },
   { XL9555_PIN_IMU_1V8_EN,   "imu_en",       true },
   { XL9555_PIN_LORA_ANT,     "lora_ant",     true },   /* Internal antenna */
   { XL9555_PIN_MOTOR_EN,     "motor_en",     true },
@@ -105,6 +139,112 @@ static struct pca9555_config_s g_xl9555_config =
 };
 
 static struct ioexpander_dev_s *g_xl9555;
+
+#ifdef CONFIG_DEV_GPIO
+static const struct gpio_operations_s g_rail_ops =
+{
+  .go_read       = tdeckmax_rail_read,
+  .go_write      = tdeckmax_rail_write,
+  .go_setpintype = tdeckmax_rail_setpintype,
+};
+
+static struct xl9555_rail_s g_rails[2];
+#endif
+
+/****************************************************************************
+ * Private Functions
+ ****************************************************************************/
+
+/****************************************************************************
+ * Name: tdeckmax_lora_rail
+ *
+ * Description:
+ *   Hold the SX1262's reset low while its rail is off, and release it when
+ *   the rail comes on.
+ *
+ *   Its chip select is left alone.  It idles high, which feeds an unpowered
+ *   SX1262 about 15 mA, but holding it low instead is worse: the chip then
+ *   loads the SPI clock and data lines it shares with the e-paper and the
+ *   microSD card, and the e-paper stops seeing its commands.  The cheapest
+ *   state for the LoRa radio is powered and asleep, which is how the board
+ *   boots.
+ *
+ ****************************************************************************/
+
+static void tdeckmax_lora_rail(bool on)
+{
+  esp_gpiowrite(BOARD_LORA_RST, on);
+}
+
+/****************************************************************************
+ * Name: tdeckmax_gps_rail
+ *
+ * Description:
+ *   The GPS UART's transmit line idles high into the receiver's input,
+ *   which fed an unpowered GPS about 25 mA.  With the rail off, the pin is
+ *   taken off the UART and held low; with it on, the UART gets it back.
+ *
+ ****************************************************************************/
+
+static void tdeckmax_gps_rail(bool on)
+{
+#ifdef CONFIG_ESP32S3_UART1
+  if (on)
+    {
+      esp_gpio_matrix_out(BOARD_GPS_UART_TX, U1TXD_OUT_IDX, 0, 0);
+      esp_configgpio(BOARD_GPS_UART_TX, OUTPUT_FUNCTION_2);
+    }
+  else
+    {
+      esp_gpiowrite(BOARD_GPS_UART_TX, false);
+      esp_gpio_matrix_out(BOARD_GPS_UART_TX, SIG_GPIO_OUT_IDX, 0, 0);
+      esp_configgpio(BOARD_GPS_UART_TX, OUTPUT);
+    }
+#endif
+}
+
+#ifdef CONFIG_DEV_GPIO
+
+/****************************************************************************
+ * Name: tdeckmax_rail_read
+ ****************************************************************************/
+
+static int tdeckmax_rail_read(FAR struct gpio_dev_s *dev, FAR bool *value)
+{
+  FAR struct xl9555_rail_s *rail = (FAR struct xl9555_rail_s *)dev;
+
+  return IOEXP_READPIN(g_xl9555, rail->pin->pin, value);
+}
+
+/****************************************************************************
+ * Name: tdeckmax_rail_write
+ ****************************************************************************/
+
+static int tdeckmax_rail_write(FAR struct gpio_dev_s *dev, bool value)
+{
+  FAR struct xl9555_rail_s *rail = (FAR struct xl9555_rail_s *)dev;
+  int ret;
+
+  ret = IOEXP_WRITEPIN(g_xl9555, rail->pin->pin, value);
+  if (ret >= 0)
+    {
+      rail->pin->powered(value);
+    }
+
+  return ret;
+}
+
+/****************************************************************************
+ * Name: tdeckmax_rail_setpintype
+ ****************************************************************************/
+
+static int tdeckmax_rail_setpintype(FAR struct gpio_dev_s *dev,
+                                    enum gpio_pintype_e pintype)
+{
+  return pintype == GPIO_OUTPUT_PIN ? OK : -EINVAL;
+}
+
+#endif /* CONFIG_DEV_GPIO */
 
 /****************************************************************************
  * Public Functions
@@ -126,6 +266,7 @@ struct ioexpander_dev_s *tdeckmax_xl9555_get(void)
 int tdeckmax_xl9555_initialize(void)
 {
   struct i2c_master_s *i2c;
+  int nrails = 0;
   int ret;
   int i;
 
@@ -176,8 +317,30 @@ int tdeckmax_xl9555_initialize(void)
           return ret;
         }
 
-      ret = gpio_lower_half_byname(g_xl9555, p->pin, GPIO_OUTPUT_PIN,
-                                   p->name);
+      if (p->powered != NULL)
+        {
+          /* The line's first level has already been driven; bring the
+           * device's pins in line with it.
+           */
+
+          p->powered(p->initial);
+
+#ifdef CONFIG_DEV_GPIO
+          DEBUGASSERT(nrails < sizeof(g_rails) / sizeof(g_rails[0]));
+          g_rails[nrails].gpio.gp_pintype = GPIO_OUTPUT_PIN;
+          g_rails[nrails].gpio.gp_ops     = &g_rail_ops;
+          g_rails[nrails].pin             = p;
+          ret = gpio_pin_register_byname(&g_rails[nrails++].gpio, p->name);
+#else
+          ret = OK;
+#endif
+        }
+      else
+        {
+          ret = gpio_lower_half_byname(g_xl9555, p->pin, GPIO_OUTPUT_PIN,
+                                       p->name);
+        }
+
       if (ret < 0)
         {
           syslog(LOG_ERR, "ERROR: XL9555: failed to register /dev/%s: %d\n",

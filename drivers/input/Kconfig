@@ -200,6 +200,18 @@ config INPUT_ST7123_I2C_ADDRESS
 
 endif # INPUT_ST7123
 
+config INPUT_CST3530
+	bool "Hynitron CST3530 touchscreen controller"
+	default n
+	select I2C
+	select INPUT_TOUCHSCREEN
+	depends on SCHED_HPWORK
+	---help---
+		Enable support for the Hynitron CST3530 capacitive touch
+		controller, and the CST66xx parts that share its protocol.  The
+		controller is kept in deep sleep while the touchscreen device is
+		not open.
+
 config INPUT_MAX11802
 	bool "MAX11802 touchscreen controller"
 	default n

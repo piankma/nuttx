@@ -31,12 +31,15 @@
 #include <errno.h>
 
 #include <nuttx/debug.h>
+#include <nuttx/sched.h>
 #include <nuttx/spi/spi.h>
 
 #include <arch/board/board.h>
 
 #include "espressif/esp_gpio.h"
 #include "esp32s3_spi.h"
+
+#include "lilygo-tdeck-max.h"
 
 #ifdef CONFIG_ESP32S3_SPI2
 
@@ -153,5 +156,55 @@ int esp32s3_spi2_cmddata(struct spi_dev_s *dev, uint32_t devid, bool cmd)
   return cmd ? -ENODEV : OK;
 }
 #endif
+
+/****************************************************************************
+ * Name: tdeckmax_lora_sleep
+ *
+ * Description:
+ *   Send the SX1262 SetSleep with a cold start: everything but the wake-up
+ *   logic off, about 160 nA.  The chip only takes commands once BUSY is
+ *   low, which after power-up takes a few milliseconds.
+ *
+ ****************************************************************************/
+
+int tdeckmax_lora_sleep(void)
+{
+  static const uint8_t setsleep[2] =
+    {
+      0x84, 0x00  /* SetSleep: cold start, no RTC wake-up */
+    };
+
+  FAR struct spi_dev_s *spi;
+  int waited;
+
+  spi = esp32s3_spibus_initialize(ESP32S3_SPI2);
+  if (spi == NULL)
+    {
+      return -ENODEV;
+    }
+
+  esp_configgpio(BOARD_LORA_BUSY, INPUT);
+
+  for (waited = 0; esp_gpioread(BOARD_LORA_BUSY); waited++)
+    {
+      if (waited >= 100)
+        {
+          return -ETIMEDOUT;
+        }
+
+      nxsched_usleep(1000);
+    }
+
+  SPI_LOCK(spi, true);
+  SPI_SETMODE(spi, SPIDEV_MODE0);
+  SPI_SETBITS(spi, 8);
+  SPI_SETFREQUENCY(spi, 1000000);
+  SPI_SELECT(spi, SPIDEV_LPWAN(0), true);
+  SPI_SNDBLOCK(spi, setsleep, sizeof(setsleep));
+  SPI_SELECT(spi, SPIDEV_LPWAN(0), false);
+  SPI_LOCK(spi, false);
+
+  return OK;
+}
 
 #endif /* CONFIG_ESP32S3_SPI2 */

@@ -56,12 +56,21 @@ config LILYGO_TDECK_MAX_CHARGE_CURRENT
 		battery is disconnected.
 
 config LILYGO_TDECK_MAX_BOOT_LORA_POWER
-	bool "Power the SX1262 LoRa module at boot"
-	default n
+	bool "Power the SX1262 LoRa module at boot, asleep"
+	default y
 	depends on IOEXPANDER_PCA9555
 	---help---
-		The LoRa rail (XL9555 P01) is left off by default to save power.
-		The rail can also be switched at runtime through /dev/lora_en.
+		Power the LoRa rail (XL9555 P01) at boot and put the SX1262 into
+		its sleep mode, where it draws well under a microamp.
+
+		That is cheaper than switching the rail off.  The SX1262 shares
+		the SPI bus with the e-paper and the microSD card, and with its
+		rail off it is fed through the bus lines instead: about 15 mA
+		through its chip select, which idles high.  Holding the chip
+		select low avoids that but lets the unpowered chip load the bus,
+		and the e-paper stops working.
+
+		The rail can still be switched at runtime through /dev/lora_en.
 
 config LILYGO_TDECK_MAX_BOOT_GPS_POWER
 	bool "Power the MIA-M10Q GPS module at boot"

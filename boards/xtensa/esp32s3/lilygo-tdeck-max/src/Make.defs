@@ -49,6 +49,10 @@ ifeq ($(CONFIG_FF_DRV2605),y)
 CSRCS += esp32s3_haptic.c
 endif
 
+ifeq ($(CONFIG_INPUT_CST3530),y)
+CSRCS += esp32s3_touch.c
+endif
+
 ifeq ($(CONFIG_ESPRESSIF_WIRELESS),y)
 CSRCS += esp32s3_radios.c
 endif

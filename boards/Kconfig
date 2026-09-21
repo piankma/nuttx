@@ -552,7 +552,7 @@ config ARCH_BOARD_LILYGO_TDECK_MAX
 		The LilyGo T-Deck Max is a handheld communicator built around an
 		ESP32-S3 (dual Xtensa LX7 @ 240 MHz, 16 MB flash, 8 MB quad PSRAM).
 		It integrates a 3.1in 240x320 e-paper display (GDEQ031T10), a QWERTY
-		keyboard (TCA8418), a CST328 touch controller, an SX1262 LoRa radio
+		keyboard (TCA8418), a CST3530 touch controller, an SX1262 LoRa radio
 		(868/915 MHz), an A7682E 4G LTE Cat 1 modem, a MIA-M10Q GNSS
 		receiver, a BHI260AP IMU, an ES8311 audio codec, a DRV2605 haptic
 		driver, an SY6970 charger with a BQ27220 fuel gauge, a microSD slot

@@ -142,6 +142,17 @@ int esp32s3_bringup(void)
     }
 #endif
 
+#if defined(CONFIG_ESP32S3_SPI2) && \
+    defined(CONFIG_LILYGO_TDECK_MAX_BOOT_LORA_POWER)
+  /* The LoRa rail is on: put the radio to sleep until something uses it */
+
+  ret = tdeckmax_lora_sleep();
+  if (ret < 0)
+    {
+      syslog(LOG_ERR, "ERROR: Failed to put the SX1262 to sleep: %d\n", ret);
+    }
+#endif
+
 #ifdef CONFIG_MMCSD_SPI
   /* Register /dev/mmcsd0 for the microSD slot */
 
@@ -181,6 +192,16 @@ int esp32s3_bringup(void)
   if (ret < 0)
     {
       syslog(LOG_ERR, "ERROR: Failed to initialize the motor: %d\n", ret);
+    }
+#endif
+
+#ifdef CONFIG_INPUT_CST3530
+  /* Register /dev/input0, the touch panel */
+
+  ret = tdeckmax_touch_initialize();
+  if (ret < 0)
+    {
+      syslog(LOG_ERR, "ERROR: Failed to initialize touch: %d\n", ret);
     }
 #endif
 

@@ -155,6 +155,10 @@ ifeq ($(CONFIG_INPUT_ST7123),y)
   CSRCS += st7123.c
 endif
 
+ifeq ($(CONFIG_INPUT_CST3530),y)
+  CSRCS += cst3530.c
+endif
+
 # Include input device driver build support
 
 DEPPATH += --dep-path input

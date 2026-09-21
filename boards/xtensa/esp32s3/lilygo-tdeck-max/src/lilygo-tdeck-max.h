@@ -29,6 +29,7 @@
 
 #include <nuttx/config.h>
 #include <nuttx/compiler.h>
+#include <stdbool.h>
 #include <stdint.h>
 
 #include <arch/board/board.h>
@@ -113,6 +114,23 @@ struct ioexpander_dev_s *tdeckmax_xl9555_get(void);
 #endif
 
 /****************************************************************************
+ * Name: tdeckmax_lora_sleep
+ *
+ * Description:
+ *   Put the SX1262 into its cold-start sleep mode.  Its rail must be on and
+ *   the SPI bus initialized.  Any later access on its chip select wakes it.
+ *
+ * Returned Value:
+ *   Zero (OK) is returned on success; A negated errno value is returned
+ *   to indicate the nature of any failure.
+ *
+ ****************************************************************************/
+
+#ifdef CONFIG_ESP32S3_SPI2
+int tdeckmax_lora_sleep(void);
+#endif
+
+/****************************************************************************
  * Name: tdeckmax_keyboard_initialize
  *
  * Description:
@@ -164,6 +182,24 @@ int tdeckmax_battery_initialize(void);
 
 #ifdef CONFIG_FF_DRV2605
 int tdeckmax_haptic_initialize(void);
+#endif
+
+/****************************************************************************
+ * Name: tdeckmax_touch_initialize
+ *
+ * Description:
+ *   Register the CST3530 touch controller over the e-paper panel as
+ *   /dev/input0.  Its reset line is on the XL9555, so this runs after
+ *   tdeckmax_xl9555_initialize().
+ *
+ * Returned Value:
+ *   Zero (OK) is returned on success; A negated errno value is returned
+ *   to indicate the nature of any failure.
+ *
+ ****************************************************************************/
+
+#ifdef CONFIG_INPUT_CST3530
+int tdeckmax_touch_initialize(void);
 #endif
 
 /****************************************************************************

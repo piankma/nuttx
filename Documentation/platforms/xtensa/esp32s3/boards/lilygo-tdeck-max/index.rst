@@ -18,7 +18,7 @@ Features
 
 * ESP32-S3 (QFN56, rev v0.2), 16 MB quad flash (3.3 V), 8 MB quad PSRAM
 * 3.1" 240x320 GDEQ031T10 e-paper (UC8253), front-light on GPIO41
-* TCA8418 keyboard controller, CST328/CST3530 touch controller
+* TCA8418 keyboard controller, CST3530 touch controller
 * SX1262 LoRa radio (868/915 MHz) with internal/external antenna switch
 * A7682E 4G LTE Cat 1 modem, MIA-M10Q GNSS receiver
 * BHI260AP IMU, DRV2605 haptic driver, ES8311 audio codec
@@ -444,6 +444,66 @@ play up to eight of the chip's 123 built-in effects, whose numbers go in
    waits for its effect to end, using the driver's ``DRV2605IOC_BUSY``
    ioctl, and erases it.
 
+Touch
+=====
+
+The panel's touch controller is a Hynitron CST3530 at I2C address 0x1a, with
+its interrupt on GPIO12 and its reset on the XL9555.  The vendor's pin map
+calls it a CST328, but it answers in the protocol Hynitron uses for the
+CST3530 and CST66xx family.  The driver is ``drivers/input/cst3530.c``, and
+the ``full`` configuration registers it as the touchscreen ``/dev/input0``,
+with the ``touchscreen`` example (``tc``) to print samples.
+
+The protocol follows Hynitron's own driver: 32-bit register addresses,
+commands written as addresses with no data, and checksummed reports read
+from 0xD0070000 and acknowledged by writing 0xD00002AB.  The driver only
+registers if the controller's info block carries the family's signature.
+The controller is put in deep sleep at boot and only woken, by a reset,
+while the device is open.  The vendor maps its coordinates
+straight onto the 240x320 panel, so no swapping or mirroring is configured.
+Touch keys reported by the controller are not passed on.
+
+Touches are reported: ``tc`` prints them on the device.
+
+Power
+=====
+
+With the terminal idle and the radios off, the board draws 39 mA, about
+36 hours from a full cell.  It drew 98 mA before two changes:
+
+* The ``full`` configuration runs the CPU at 80 MHz rather than 240 MHz,
+  which saves 14 mA and costs about a third of a second of boot time.
+* Chips whose power rails are off are no longer fed through their pins.  A
+  line held high into an unpowered chip powers it through its input
+  protection.  The GPS UART's transmit line fed the unpowered GPS about
+  25 mA; the ``gps_en`` device now holds it low while the rail is off and
+  hands it back to the UART when the rail is switched on.
+* The SX1262 was fed about 15 mA the same way, through its SPI chip select.
+  Its rail is now switched on at boot and the radio put into its sleep mode
+  instead (``LILYGO_TDECK_MAX_BOOT_LORA_POWER``, on by default); its first
+  SPI access wakes it.
+
+.. warning::
+
+   Do not hold the SX1262's chip select low while its rail is off.  The
+   unpowered chip then loads the SPI clock and data lines it shares with the
+   e-paper and the microSD card, and the e-paper stops receiving commands:
+   the display freezes while its driver sees no error.  Switching the LoRa
+   rail off through ``lora_en`` still works, with the chip select high, but
+   costs about 15 mA more than leaving the radio powered and asleep.
+
+The draw can be measured with USB connected: setting ``EN_HIZ`` (bit 7 of
+the SY6970's register 0x00) disconnects USB power, so the board runs from
+the battery and the fuel gauge reports its current, while USB data keeps
+working.  It must be cleared again afterwards.
+
+.. warning::
+
+   The Espressif HAL objects do not depend on the configuration, so after
+   changing an ``ESP32S3_*`` option such as the CPU frequency, run
+   ``make clean``.  Otherwise the old value stays compiled in without any
+   warning.
+
 On-device terminal
 ==================
 
@@ -554,6 +614,12 @@ Verified on hardware (2026-09-20/21):
   battery alone the gauge reports discharging, at 102 mA with the board
   idle; plugged back in, the charger reports charging.  The gauge's design
   capacity is set and reads back as 1400 mAh.
+* The touch controller answers, reports its resolution and wakes from deep
+  sleep when ``/dev/input0`` is opened.
+* Idle current: 39 mA with the terminal up and the radios off or asleep,
+  down from 98 mA, with the e-paper refreshing, the microSD card mounting,
+  the SX1262 waking on its first SPI access and GPS NMEA arriving with its
+  rail on.
 * The vibration motor driver: ``haptic`` commands complete with the expected
   timing, the chip returns to standby afterwards, and effect slots are freed.
 * The on-device terminal: it starts at boot, shows the NSH banner and
@@ -584,5 +650,6 @@ Not verified:
 * The debug session through the VS Code UI (only OpenOCD and GDB were driven).
 * Charging from a mostly empty cell, and how closely the state of charge
   follows the cell over a full discharge.
+* Touch events from the touch controller.
 
-Not implemented yet: drivers for touch, the IMU and the ES8311 audio path.
+Not implemented yet: drivers for the IMU and the ES8311 audio path.
