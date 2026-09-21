@@ -58,6 +58,10 @@
 #  include "esp32s3_wifi_adapter.h"
 #endif
 
+#ifdef CONFIG_ESPRESSIF_LEDC
+#  include "esp32s3_board_ledc.h"
+#endif
+
 #ifdef CONFIG_LCD_UC8253
 #  include <nuttx/board.h>
 #  include <nuttx/lcd/lcd.h>
@@ -157,6 +161,18 @@ int esp32s3_bringup(void)
   if (ret < 0)
     {
       syslog(LOG_ERR, "ERROR: Failed to initialize microSD: %d\n", ret);
+    }
+#endif
+
+#ifdef CONFIG_ESPRESSIF_LEDC
+  /* Register /dev/pwm0.  Channel 0 is the e-paper frontlight and channel 1
+   * is the keyboard backlight; both are off until something drives them.
+   */
+
+  ret = esp32s3_pwm_setup();
+  if (ret < 0)
+    {
+      syslog(LOG_ERR, "ERROR: Failed to initialize PWM: %d\n", ret);
     }
 #endif
 

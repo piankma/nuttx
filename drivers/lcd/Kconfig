@@ -1944,6 +1944,87 @@ config SSD1680_FREQUENCY
 
 endif # LCD_SSD1680
 
+config LCD_UC8253
+	bool "UC8253 E-PAPER Single Chip Driver"
+	default n
+	select SPI_CMDDATA
+	select LCD_PACKEDMSFIRST
+	---help---
+		UltraChip UC8253 e-paper controller, as used by the GoodDisplay
+		GDEQ031T10 3.1 inch 240x320 monochrome panel.
+
+		The panel is presented in its native portrait orientation; the
+		driver does not rotate.
+
+		Pixels are packed most significant bit first, which is the
+		controller's own order, and a set bit is white.  If you drive the
+		panel through NX, enable NX_PACKEDMSFIRST to match.
+
+		Refreshing an e-paper panel takes about a second, so the driver
+		only updates a shadow framebuffer until its redraw method is
+		called.  Through the LCD framebuffer shim that is an FBIO_UPDATE
+		ioctl on /dev/fb0.
+
+		Required SPI driver settings:
+		SPI_CMDDATA - Include support for cmd/data selection.
+
+if LCD_UC8253
+
+config LCD_UC8253_SPIMODE
+	int "UC8253 SPI Mode"
+	default 0
+	range 0 3
+	---help---
+		Selects the SPI mode used with the UC8253 device.  The controller
+		samples on the rising edge of SCL, which is mode 0.
+
+config LCD_UC8253_FREQUENCY
+	int "UC8253 SPI Frequency"
+	default 10000000
+	range 100000 20000000
+	---help---
+		Selects the SPI bus frequency used with the UC8253 device.
+
+config LCD_UC8253_FASTUPDATE
+	bool "UC8253 fast refresh"
+	default y
+	---help---
+		The controller picks its drive waveform from the temperature it
+		measures.  Forcing a high temperature selects a faster waveform,
+		which shortens a full refresh from about 3 s to about 1 s.
+
+		Say n if the panel has to work at low temperature, where the
+		forced waveform would leave a poor image.
+
+config LCD_UC8253_PARTIAL
+	bool "UC8253 partial refresh"
+	default y
+	---help---
+		Refresh only the part of the panel that changed, instead of the
+		whole screen.
+
+		The gain is less about time (roughly 0.7 s against 1.0 s, since
+		the waveform length barely depends on the area) than about what
+		it looks like: a full refresh inverts the entire screen on its
+		way to the new image, which is very visible, while a partial
+		refresh leaves everything outside the changed rectangle alone.
+
+		Partial refreshes do leave a little charge behind, so the image
+		ghosts if they are repeated indefinitely.  See
+		LCD_UC8253_FULL_EVERY.
+
+config LCD_UC8253_FULL_EVERY
+	int "UC8253 full refresh interval"
+	default 16
+	range 0 4096
+	depends on LCD_UC8253_PARTIAL
+	---help---
+		Force a full refresh after this many partial ones, to clear the
+		ghosting they accumulate.  0 never forces one, which leaves it
+		to the application to ask for a full screen update now and then.
+
+endif # LCD_UC8253
+
 
 endmenu # LCD Driver selection
 endif # LCD

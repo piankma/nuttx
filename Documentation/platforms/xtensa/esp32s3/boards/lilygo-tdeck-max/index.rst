@@ -228,17 +228,58 @@ A few properties worth knowing:
   the panel through NX.
 * The panel is presented in its **native portrait orientation**, 240x320.
   The driver does not rotate.
-* The **first** refresh after a reset drives the panel to white before
-  showing the frame, so that it starts from a known image rather than
-  whatever the previous firmware left on the glass.  That costs one extra
-  refresh, once.
+* The **first** refresh after a reset is taken as a clear: the panel is
+  driven to white and the frame that triggered it is dropped.  This is
+  deliberate.  ``up_fbinitialize()`` flushes the framebuffer as soon as it
+  registers, and that buffer has just been allocated with ``kmm_zalloc``,
+  so it is all zeroes, which on this panel is every pixel black.  Without
+  this the board would paint its screen black on every boot.  Clearing
+  instead costs about 1.2 s of boot time.
 * ``LCD_UC8253_FASTUPDATE`` (on by default) forces the waveform the
   controller would pick at a high temperature, which shortens a full
   refresh from about 3 s to about 1 s.  Turn it off if the panel has to
   work in the cold.
-* Boot does **not** refresh the panel: a handheld should not pay a second
-  of screen flashing on every reset.  The image already on the glass stays
-  there until something asks for an update.
+* A full refresh measures 1.00 s on this board, against the panel's
+  documented 1.015 s for the fast waveform.  That timing is the easiest way
+  to tell the BUSY line is really being polled: a driver falling back on
+  fixed delays would take the full 8 s timeout instead.
+* ``LCD_UC8253_PARTIAL`` (on by default) refreshes only the rectangle that
+  changed.  The driver tracks that rectangle across ``putrun`` and
+  ``putarea`` calls and picks a partial refresh whenever the change does
+  not cover the whole panel.  Measured at about 0.80 s against 1.00 s for
+  a full one, but the real gain is that the rest of the screen is left
+  alone: a full refresh inverts the entire panel on its way to the new
+  image, which is very visible.
+* Partial refreshes accumulate ghosting, so ``LCD_UC8253_FULL_EVERY``
+  (16 by default) forces a full one periodically.  Set it to 0 to leave
+  that entirely to the application.
+* Through ``/dev/fb0`` the refreshed region is whatever area is passed to
+  ``FBIO_UPDATE``, not a comparison of the pixels: ``lcd_framebuffer.c``
+  always calls ``putarea`` over that area before ``redraw``, so it is
+  always dirty.  Pass a tight area to get a tight partial refresh.  The
+  driver's "nothing changed, skip the refresh" path is therefore only
+  reachable through ``/dev/lcd0``.
+
+Backlights
+==========
+
+Both backlights are on LEDC PWM and appear as ``/dev/pwm0``: channel 1 is
+the e-paper frontlight (GPIO41) and channel 2 is the keyboard backlight
+(GPIO42).  Both are off after boot::
+
+    nsh> pwm -c 1 -c 2 -d 100 -d 100 -t 4    # both on, full, for 4 s
+    nsh> pwm -c 1 -d 30 -t 10                # frontlight dim
+
+``PWM_NCHANNELS`` must be at least 2.  With it left at 1 the LEDC driver
+collapses the timer to a single channel and the keyboard backlight is never
+driven.
+
+.. note::
+
+   ``lcd_framebuffer.c`` discards the return value of ``redraw``, so a
+   refresh that fails or times out does **not** surface as an
+   ``FBIO_UPDATE`` error.  Do not read a successful ioctl as proof that the
+   panel updated; time it instead.
 
 Memory model with the radios enabled
 ====================================
