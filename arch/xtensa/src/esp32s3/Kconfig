@@ -827,6 +827,20 @@ config ESP32S3_USBSERIAL
 	select OTHER_UART_SERIALDRIVER
 	select ARCH_HAVE_SERIAL_TERMIOS
 
+config ESP32S3_USBSERIAL_RXBUFSIZE
+	int "USB-Serial receive buffer size"
+	default 64
+	range 64 8192
+	depends on ESP32S3_USBSERIAL
+	---help---
+		Size of the receive buffer of the USB-Serial/JTAG console driver.
+
+		The host can deliver input much faster than the console consumes it
+		(each echoed character is sent as its own USB packet, which limits
+		the echo to about 1 KB/s).  Input that arrives while the buffer is
+		full is dropped, so pasting a long line into the terminal loses
+		characters.  Increase this to at least the longest paste expected.
+
 config ESP32S3_OTG
 	bool "USB OTG"
 	default n
@@ -1513,6 +1527,18 @@ endmenu # UART Configuration
 
 menu "I2C Configuration"
 	depends on ESP32S3_I2C
+
+config ESP32S3_I2C_SCL_TIMEOUT_US
+	int "SCL clock-stretch timeout (microseconds, 0 = default)"
+	default 0
+	range 0 400000
+	---help---
+		How long a slave may hold SCL low before the I2C controller aborts
+		the transfer with a timeout error.  With 0 the timeout is only about
+		10 bus cycles (25 us at 400 kHz), which is too short for slaves that
+		stretch the clock, such as TI fuel gauges (BQ27220): they are then
+		never seen on the bus.  Values of a few milliseconds are enough for
+		those; the hardware supports up to about 400 ms.
 
 if ESP32S3_I2C0
 

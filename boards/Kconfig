@@ -545,6 +545,19 @@ config ARCH_BOARD_ESP32S3_M5_CARDPUTER
 		integrates a 56-key keyboard, a 1.14" ST7789 TFT, an NS4168 I2S
 		speaker, an SPM1423 microphone, an IR transmitter and a microSD slot.
 
+config ARCH_BOARD_LILYGO_TDECK_MAX
+	bool "LilyGo T-Deck Max (ESP32-S3)"
+	depends on ARCH_CHIP_ESP32S3WROOM1N16R8 || ARCH_CHIP_ESP32S3CUSTOM
+	---help---
+		The LilyGo T-Deck Max is a handheld communicator built around an
+		ESP32-S3 (dual Xtensa LX7 @ 240 MHz, 16 MB flash, 8 MB quad PSRAM).
+		It integrates a 3.1in 240x320 e-paper display (GDEQ031T10), a QWERTY
+		keyboard (TCA8418), a CST328 touch controller, an SX1262 LoRa radio
+		(868/915 MHz), an A7682E 4G LTE Cat 1 modem, a MIA-M10Q GNSS
+		receiver, a BHI260AP IMU, an ES8311 audio codec, a DRV2605 haptic
+		driver, an SY6970 charger with a BQ27220 fuel gauge, a microSD slot
+		and an XL9555 I/O expander that gates the power of most of them.
+
 config ARCH_BOARD_ESP32S3_8048S043
 	bool "ESP32-S3 8048S043"
 	depends on ARCH_CHIP_ESP32S3WROOM1N4 || ARCH_CHIP_ESP32S3MINI1N8 || ARCH_CHIP_ESP32S3WROOM1N8R2 || ARCH_CHIP_ESP32S3WROOM1N16R8 || ARCH_CHIP_ESP32S3WROOM2N16R8V || ARCH_CHIP_ESP32S3WROOM2N32R8V || ARCH_CHIP_ESP32S3CUSTOM || ARCH_CHIP_ESP32S3WROOM1N8R8
@@ -3953,6 +3966,7 @@ config ARCH_BOARD
 	default "franzininho-wifi"             if ARCH_BOARD_FRANZININHO_WIFI
 	default "esp32s3-devkit"               if ARCH_BOARD_ESP32S3_DEVKIT
 	default "esp32s3-m5-cardputer"         if ARCH_BOARD_ESP32S3_M5_CARDPUTER
+	default "lilygo-tdeck-max"              if ARCH_BOARD_LILYGO_TDECK_MAX
 	default "esp32s3-8048S043"             if ARCH_BOARD_ESP32S3_8048S043
 	default "esp32s3-eye"                  if ARCH_BOARD_ESP32S3_EYE
 	default "esp32s3-meadow"               if ARCH_BOARD_ESP32S3_MEADOW
@@ -5336,6 +5350,9 @@ source "boards/xtensa/esp32s3/esp32s3-devkit/Kconfig"
 endif
 if ARCH_BOARD_ESP32S3_M5_CARDPUTER
 source "boards/xtensa/esp32s3/esp32s3-m5-cardputer/Kconfig"
+endif
+if ARCH_BOARD_LILYGO_TDECK_MAX
+source "boards/xtensa/esp32s3/lilygo-tdeck-max/Kconfig"
 endif
 if ARCH_BOARD_ESP32S3_8048S043
 source "boards/xtensa/esp32s3/esp32s3-8048S043/Kconfig"

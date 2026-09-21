@@ -56,6 +56,7 @@
 /* The hardware buffer has a fixed size of 64 bytes */
 
 #define ESP32S3_USBCDC_BUFFERSIZE 64
+#define ESP32S3_USBCDC_RXBUFSIZE  CONFIG_ESP32S3_USBSERIAL_RXBUFSIZE
 
 /****************************************************************************
  * Private Types
@@ -94,7 +95,7 @@ static int  esp32s3_ioctl(struct file *filep, int cmd, unsigned long arg);
  * Private Data
  ****************************************************************************/
 
-static char g_rxbuffer[ESP32S3_USBCDC_BUFFERSIZE];
+static char g_rxbuffer[ESP32S3_USBCDC_RXBUFSIZE];
 static char g_txbuffer[ESP32S3_USBCDC_BUFFERSIZE];
 
 static struct esp32s3_priv_s g_usbserial_priv =
@@ -130,7 +131,7 @@ uart_dev_t g_uart_usbserial =
   .isconsole = true,
   .recv      =
     {
-      .size    = ESP32S3_USBCDC_BUFFERSIZE,
+      .size    = ESP32S3_USBCDC_RXBUFSIZE,
       .buffer  = g_rxbuffer,
     },
   .xmit      =
