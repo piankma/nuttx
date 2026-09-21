@@ -215,7 +215,37 @@ slot and the SX1262.  The driver is ``drivers/lcd/uc8253.c``.
 
 Adding the radios does not slow the panel down: a full refresh still
 measures 1.00 s with Wi-Fi and BLE up.  It does change the memory model,
-see below, which leaves about 140 KB of the internal heap free.
+see below.
+
+In this configuration the radios are **off at boot**.  Neither is
+initialised until something asks for it, which keeps internal heap use at
+about 30 KB rather than 108 KB, and keeps the Wi-Fi radio from starting: the
+network stack brings ``wlan0`` up, and with it the radio, as soon as the
+interface exists.  Each radio is offered as a device that behaves like the
+XL9555 power rails::
+
+    nsh> gpio -o 1 /dev/wifi_en
+    nsh> ifup wlan0
+    nsh> gpio -o 1 /dev/ble_en
+    nsh> ifup bnep0
+
+Either order works and asking twice is harmless.  Bringing a radio up is a
+one way trip, because the drivers have no way to unregister their network
+devices: writing 0 once a radio is up fails with ``ENOTSUP``.  ``ifdown``
+and ``ifup`` still stop and start the Wi-Fi radio.  ``wifi`` and
+``blewifi`` bring their radios up at boot instead, through
+``LILYGO_TDECK_MAX_BOOT_WIFI`` and ``LILYGO_TDECK_MAX_BOOT_BLE``.
+
+.. warning::
+
+   Bringing radios up at boot needs ``BOARD_INITTHREAD_STACKSIZE`` of at
+   least 4096, and the build refuses anything smaller.  The board
+   initialisation thread runs the radio drivers' setup, which is deep.  With
+   2048 it overflowed and trampled the thread-local block at the bottom of
+   its stack; the damage only surfaced when the thread exited, as a panic in
+   ``pthread_mutex_inconsistent``, and because syslog goes to a buffer the
+   board simply reset in a loop with nothing on the console.  The thread
+   exits once boot is done, so the larger stack is not a lasting cost.
 
 The panel appears both as ``/dev/fb0`` (through the LCD framebuffer front
 end) and as ``/dev/lcd0``::
