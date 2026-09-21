@@ -416,6 +416,34 @@ written to the charger, an expired watchdog would otherwise return every
 setting to its default.  The charger's ADC is left off, as the vendor does,
 so its own voltage readings are stale; the gauge measures the battery.
 
+Vibration motor
+===============
+
+The vibration motor is an ERM driven by a DRV2605L at I2C address 0x5a.
+The chip's enable is the XL9555's ``motor_en`` line, which is on after
+boot.  The driver is ``drivers/input/drv2605.c``, and the ``full``
+configuration registers it as the force feedback device ``/dev/input_ff0``,
+with the ``haptic`` example to play it::
+
+    nsh> haptic                  # 200 ms at full strength
+    nsh> haptic buzz 500 40      # 500 ms at 40 %
+    nsh> haptic effect 1 7 10    # strong click, soft bump, double click
+
+The driver runs the motor in open loop with the chip's ERM library 1, as the
+vendor's firmware does, and puts the chip in standby between effects.
+``FF_CONSTANT`` and ``FF_RUMBLE`` effects run the motor at a level for the
+effect's length; ``FF_PERIODIC`` effects with the ``FF_CUSTOM`` waveform
+play up to eight of the chip's 123 built-in effects, whose numbers go in
+``custom_data``.  ``FF_GAIN`` scales the level.
+
+.. note::
+
+   Effects uploaded to a force feedback device outlive the file they were
+   uploaded through, and only that file may erase them.  A program that
+   exits without ``EVIOCRMFF`` leaves its slot in use for good.  ``haptic``
+   waits for its effect to end, using the driver's ``DRV2605IOC_BUSY``
+   ioctl, and erases it.
+
 On-device terminal
 ==================
 
@@ -526,6 +554,8 @@ Verified on hardware (2026-09-20/21):
   battery alone the gauge reports discharging, at 102 mA with the board
   idle; plugged back in, the charger reports charging.  The gauge's design
   capacity is set and reads back as 1400 mAh.
+* The vibration motor driver: ``haptic`` commands complete with the expected
+  timing, the chip returns to standby afterwards, and effect slots are freed.
 * The on-device terminal: it starts at boot, shows the NSH banner and
   prompt, echoes typed characters, handles backspace and shows command
   output.
@@ -555,5 +585,4 @@ Not verified:
 * Charging from a mostly empty cell, and how closely the state of charge
   follows the cell over a full discharge.
 
-Not implemented yet: drivers for touch, the IMU, the haptic driver and the
-ES8311 audio path.
+Not implemented yet: drivers for touch, the IMU and the ES8311 audio path.

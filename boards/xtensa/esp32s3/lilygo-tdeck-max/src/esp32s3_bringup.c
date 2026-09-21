@@ -174,6 +174,16 @@ int esp32s3_bringup(void)
     }
 #endif
 
+#ifdef CONFIG_FF_DRV2605
+  /* Register /dev/input_ff0, the vibration motor */
+
+  ret = tdeckmax_haptic_initialize();
+  if (ret < 0)
+    {
+      syslog(LOG_ERR, "ERROR: Failed to initialize the motor: %d\n", ret);
+    }
+#endif
+
 #ifdef CONFIG_ESPRESSIF_LEDC
   /* Register /dev/pwm0.  Channel 0 is the e-paper frontlight and channel 1
    * is the keyboard backlight; both are off until something drives them.

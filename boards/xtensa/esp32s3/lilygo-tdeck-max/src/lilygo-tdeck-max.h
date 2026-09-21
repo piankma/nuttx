@@ -149,6 +149,24 @@ int tdeckmax_battery_initialize(void);
 #endif
 
 /****************************************************************************
+ * Name: tdeckmax_haptic_initialize
+ *
+ * Description:
+ *   Bring up the DRV2605L behind the vibration motor and register it as
+ *   /dev/input_ff0.  Its enable line is on the XL9555, so this runs after
+ *   tdeckmax_xl9555_initialize().
+ *
+ * Returned Value:
+ *   Zero (OK) is returned on success; A negated errno value is returned
+ *   to indicate the nature of any failure.
+ *
+ ****************************************************************************/
+
+#ifdef CONFIG_FF_DRV2605
+int tdeckmax_haptic_initialize(void);
+#endif
+
+/****************************************************************************
  * Name: tdeckmax_radios_initialize
  *
  * Description:

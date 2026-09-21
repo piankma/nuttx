@@ -45,6 +45,10 @@ ifneq ($(CONFIG_BQ27220)$(CONFIG_SY6970),)
 CSRCS += esp32s3_battery.c
 endif
 
+ifeq ($(CONFIG_FF_DRV2605),y)
+CSRCS += esp32s3_haptic.c
+endif
+
 ifeq ($(CONFIG_ESPRESSIF_WIRELESS),y)
 CSRCS += esp32s3_radios.c
 endif
