@@ -173,6 +173,16 @@ int esp32s3_bringup(void)
     }
 #endif
 
+#ifdef CONFIG_SENSORS_BHI260AP
+  /* Register the IMU (uORB sensor_accel0, sensor_gyro0) */
+
+  ret = tdeckmax_imu_initialize();
+  if (ret < 0)
+    {
+      syslog(LOG_ERR, "ERROR: Failed to initialize the IMU: %d\n", ret);
+    }
+#endif
+
 #ifdef CONFIG_MMCSD_SPI
   /* Register /dev/mmcsd0 for the microSD slot */
 

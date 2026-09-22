@@ -186,6 +186,22 @@ int tdeckmax_gnss_initialize(void);
 #endif
 
 /****************************************************************************
+ * Name: tdeckmax_imu_initialize
+ *
+ * Description:
+ *   Register the BHI260AP IMU as the uORB topics sensor_accel0 and
+ *   sensor_gyro0.  Its firmware is uploaded when a sensor is first used.
+ *
+ * Returned Value:
+ *   Zero (OK) on success; a negated errno value on failure.
+ *
+ ****************************************************************************/
+
+#ifdef CONFIG_SENSORS_BHI260AP
+int tdeckmax_imu_initialize(void);
+#endif
+
+/****************************************************************************
  * Name: tdeckmax_keyboard_initialize
  *
  * Description:

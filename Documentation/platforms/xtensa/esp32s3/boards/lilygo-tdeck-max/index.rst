@@ -467,6 +467,22 @@ it or ``/dev/input0`` is open.
 
 Touches are reported: ``tc`` prints them on the device.
 
+IMU
+===
+
+The BHI260AP smart sensor hub is registered with the ``bhi260ap`` driver
+(``SENSORS_BHI260AP``) as the uORB topics ``sensor_accel0`` and
+``sensor_gyro0``::
+
+    nsh> uorb_listener -n 5 -t 10 sensor_accel
+
+The chip runs a firmware image from its program RAM: the driver uploads
+Bosch's standard BHI260AP image, which the board carries, when a sensor is
+first activated (about 3.5 s over I2C at 400 kHz) and leaves it running.
+The accelerometer (m/s², 8 g range) and gyroscope (rad/s, 2000 deg/s) are
+the firmware's passthrough sensors, 50 Hz by default.  Its host interrupt
+on GPIO21 is level triggered and wakes the chip from light sleep.
+
 LoRa
 ====
 
@@ -714,6 +730,8 @@ Verified on hardware (2026-09-20/21):
   radio starts receiving with the TCXO (2.4 V on DIO3) and DIO2 as RF switch.
 * GNSS: NMEA received on UART1 at 38400 baud, and parsed into uORB satellite
   messages through the GNSS upper half.
+* IMU: accelerometer (about 1 g at rest) and gyroscope samples through uORB
+  at 50 and 100 Hz, on USB and on battery, after the firmware upload.
 * LoRa: packets transmitted through ``/dev/lora0``, with send times matching
   the time on air; DIO1 wakes the chip from light sleep.
 * Modem: data from the modem (unsolicited ``+CPIN`` lines) is received on
