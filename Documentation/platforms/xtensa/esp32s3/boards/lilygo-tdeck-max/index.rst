@@ -644,9 +644,10 @@ cuts its rail, which takes about 4.2 s in all.
 
 The level shifter between the modem and the ESP32-S3 (a 4-bit RS0104 for
 RX, TX, RI and DTR) is powered from the modem's own 1.8 V output, so while
-the modem is off the ESP32-S3 sees nothing on UART2 at all.  The SIM goes
-in the same holder as the microSD card, and the modem has its own
-microphone; its speaker output is shared with the codec's through
+the modem is off the ESP32-S3 sees nothing on UART2 at all.  The SIM and
+the microSD card share one combined holder (WL-SIM3IN2) and can both be
+fitted: the SIM contacts go only to the modem, the card to the ESP32-S3's
+SPI bus.  The modem has its own microphone; its speaker output is shared with the codec's through
 ``audio_sel``.
 
 Verified without a SIM card: the modem answers, identifies itself
