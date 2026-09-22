@@ -35,6 +35,11 @@ service cfgd cfgd
    restart_period 1000
 #endif
 
+#ifdef CONFIG_PNUT_SYSD
+service sysd sysd
+   restart_period 1000
+#endif
+
 #ifdef CONFIG_PNUT_MODEMD
 service modemd modemd
    restart_period 1000
@@ -68,6 +73,9 @@ service terminal nxterm
 on init
 #ifdef CONFIG_PNUT_CFGD
    start cfgd
+#endif
+#ifdef CONFIG_PNUT_SYSD
+   start sysd
 #endif
 #ifdef CONFIG_PNUT_MODEMD
    start modemd
