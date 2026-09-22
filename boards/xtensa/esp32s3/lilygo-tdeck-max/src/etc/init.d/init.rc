@@ -26,6 +26,15 @@
  * the board build's VPATH, this file replaces the common one.
  */
 
+/* pnut-os daemons (the pnut-os repository, built as apps/external).  init
+ * restarts one that exits.
+ */
+
+#ifdef CONFIG_PNUT_CFGD
+service cfgd cfgd
+   restart_period 1000
+#endif
+
 #ifdef CONFIG_SYSTEM_NSH
 service console sh
    console
@@ -47,6 +56,9 @@ service terminal nxterm
 #endif
 
 on init
+#ifdef CONFIG_PNUT_CFGD
+   start cfgd
+#endif
 #ifdef CONFIG_SYSTEM_CDCACM
    exec -- sercon
 #endif
