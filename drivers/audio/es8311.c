@@ -1424,7 +1424,18 @@ static int es8311_processbegin(FAR struct es8311_dev_s *priv)
       timeout = MSEC2TICK(((uint32_t)(apb->nbytes - apb->curbyte) << 14) /
                           (uint32_t)priv->samprate / (uint32_t)priv->bpsamp);
 
-      if (priv->audio_mode == ES_MODULE_DAC)
+      if (priv->audio_mode == ES_MODULE_DAC && apb->curbyte >= apb->nbytes)
+        {
+          /* Nothing to send: players end a stream whose length is a
+           * multiple of the buffer size with an empty final buffer, and
+           * an empty transfer may never complete, which would keep the
+           * worker from ever stopping.  Complete it here.
+           */
+
+          es8311_processdone(priv->i2s, apb, priv, OK);
+          ret = OK;
+        }
+      else if (priv->audio_mode == ES_MODULE_DAC)
         {
           ret = I2S_SEND(priv->i2s, apb, es8311_processdone,
                          priv, timeout);

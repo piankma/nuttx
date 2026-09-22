@@ -1359,6 +1359,7 @@ static void IRAM_ATTR i2s_tx_schedule(struct esp_i2s_s *priv,
         {
           DEBUGASSERT(bfdesc->next);
           bfdesc = bfdesc->next;
+          bfdesc_ctrl = (dma_descriptor_t *)bfdesc;
         }
 
       if (bfdesc == outlink)
