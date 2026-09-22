@@ -90,9 +90,10 @@ Device             XL9555  Function (boot state)
 ``audio_sel``      P12     high = modem audio, low = ES8311 (ES8311)
 ================== ======= ==================================================
 
-To power the modem, switch on ``modem_pwr``, wait a second, then pulse
-``modem_pwrkey`` high for about 50 ms, as the vendor firmware does.  The
-vendor notes that the battery must be connected to use the A7682E.
+To power the modem, switch on ``modem_pwr``, wait a moment, then pulse
+``modem_pwrkey`` high for about 100 ms; the ``modem`` command does this
+and waits for it to answer (see Modem).  The vendor notes that the battery
+must be connected to use the A7682E.
 
 Pin map
 =======
@@ -612,6 +613,50 @@ The build downloads the minmea library, which needs ``unzip``.
 NMEA arriving and being parsed into satellite messages is verified, on USB
 and on battery; a position fix has not been tried with a view of the sky.
 
+Modem
+=====
+
+The SIMCom A7682E (4G LTE Cat 1) is on UART2 at 115200 baud as
+``/dev/ttyS1``, and the ``modem`` example drives it::
+
+    nsh> modem on            # supply, PWRKEY, wait for the first answer
+    nsh> modem info          # identity, SIM, signal, network
+    nsh> modem at +CSQ       # any command, the AT prefix is optional
+    nsh> modem sms send +441234567890 hello
+    nsh> modem sms list      # unread, or "list all"
+    nsh> modem term          # type at it yourself; Ctrl-] leaves
+    nsh> modem off
+
+``modem on`` switches the ``modem_pwr`` rail on, presses PWRKEY (high on
+the XL9555 pulls the modem's PWRKEY low) for 100 ms and then sends ``AT``
+once a second until the modem answers, which takes about 7.2 s; it also
+turns the command echo off and verbose errors on.  The supply alone does
+not start the modem, and its UART is up about 8 s after the key press.
+
+``modem off`` shuts the modem down with ``AT+CPOF``, or with a 3 s PWRKEY
+press if it does not answer, waits for it to stop answering and only then
+cuts its rail, which takes about 4.2 s in all.
+
+.. warning::
+
+   Do not cut ``modem_pwr`` while the modem is running: SIMCom warns that
+   it can damage the modem's flash.  Use ``modem off``.
+
+The level shifter between the modem and the ESP32-S3 (a 4-bit RS0104 for
+RX, TX, RI and DTR) is powered from the modem's own 1.8 V output, so while
+the modem is off the ESP32-S3 sees nothing on UART2 at all.  The SIM goes
+in the same holder as the microSD card, and the modem has its own
+microphone; its speaker output is shared with the codec's through
+``audio_sel``.
+
+Verified without a SIM card: the modem answers, identifies itself
+(``A7682E``, firmware ``A7682M7_V1.11.1``, its IMEI), reports the strongest
+cell it can hear (``+CSQ`` at -67 dBm) and says that no SIM is inserted;
+the terminal, and powering it down and up again, work.  Not yet verified,
+because it needs a SIM: registration, SMS, and a data connection (PPP is
+in NuttX as ``NETUTILS_PPPD`` with ``NETUTILS_CHAT``, and is not configured
+here yet).
+
 .. warning::
 
    The Espressif HAL releases memory from ``heap_caps_malloc()`` with plain
@@ -818,8 +863,9 @@ Verified on hardware (2026-09-20/21):
   the time on air; DIO1 wakes the chip from light sleep.  ``lora_ant``
   switches between the internal antenna and the external connector (see
   LoRa).
-* Modem: data from the modem (unsolicited ``+CPIN`` lines) is received on
-  UART2.
+* Modem: it answers AT commands on UART2 and identifies itself, reports
+  the cell it hears and that no SIM is inserted, and powers up and down
+  through ``modem on``/``modem off`` (see Modem).
 * JTAG: OpenOCD and GDB over the USB Serial/JTAG unit, with a breakpoint,
   backtrace, memory reads and ``finish`` inside the board bring-up code.
 * Wi-Fi: ``wlan0`` registers, scanning returns real access points, and a
@@ -855,7 +901,8 @@ Verified on hardware (2026-09-20/21):
 Not verified:
 
 * A GNSS position fix: tried only indoors, from a cold start.
-* Transmission to the modem (no reply to ``AT`` was seen).
+* Anything on the modem that needs a SIM card: registration, SMS, calls
+  and a data connection.
 * Recovery from repeated failed associations: after a few attempts against an
   access point that was no longer present, ``wapi scan wlan0`` began returning
   an empty list, including for networks that were definitely in range.  A board
