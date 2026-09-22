@@ -445,6 +445,7 @@ struct esp_i2s_s
 
   int  rx_irq;                    /* RX IRQ */
   bool rx_started;                /* RX channel started */
+  bool rx_running;                /* RX receiving, reloaded per buffer */
 #endif /* I2S_HAVE_RX */
 
   bool streaming;                 /* Is I2S peripheral active? */
@@ -953,17 +954,49 @@ static int i2s_rxdma_start(struct esp_i2s_s *priv)
 
 #ifdef CONFIG_ARCH_CHIP_ESP32S3
 
+  /* Once the receiver runs it keeps running, and the next buffer only
+   * needs the DMA: restarting the receiver for every buffer lost the
+   * samples that arrived meanwhile and captured the first one mid-frame, a
+   * click at every buffer.  The receiver signals SUC_EOF every
+   * RX_EOF_NUM + 1 samples for as long as it runs (ESP-IDF relies on this
+   * too).  This path is safe in the interrupt handler.
+   */
+
+  if (priv->rx_running)
+    {
+      up_clean_dcache((uintptr_t)bfcontainer->dma_link,
+                      (uintptr_t)bfcontainer->dma_link +
+                      I2S_DMADESC_NUM * sizeof(struct esp_dmadesc_s));
+
+      esp_dma_load(bfcontainer->dma_link, priv->dma_channel, false);
+      esp32s3_dma_enable_interrupt(priv->dma_channel, false,
+                                   GDMA_LL_EVENT_RX_SUC_EOF, true);
+      esp32s3_dma_clear_interrupt(priv->dma_channel, false,
+                                  GDMA_LL_EVENT_RX_SUC_EOF);
+      esp_dma_enable(priv->dma_channel, false);
+
+      sq_addlast((sq_entry_t *)bfcontainer, &priv->rx.act);
+      return OK;
+    }
+
   /* rx_eof_num: on ESP32-S3 with GDMA, the I2S peripheral has an internal
    * RX bit counter.  When it reaches (RX_BITS_MOD+1)*(RX_EOF_NUM+1) bits,
    * it signals SUC_EOF to the GDMA.  So RX_EOF_NUM is a *sample count*,
    * not a byte count.  Convert buffer bytes → sample count:
    *   eof_samples = (nbytes * 8 / data_width) - 1
-   * Max value is 12-bit (4095).
+   * The count includes the slot that mono mode does not store, so a mono
+   * buffer takes twice as many.  Max value is 12-bit (4095).
    */
 
   eof_nbytes = MIN(bfcontainer->nbytes, ESPRESSIF_DMA_BUFLEN_MAX);
 
-  eof_samples = (eof_nbytes * 8) / priv->data_width - 1;
+  eof_samples = (eof_nbytes * 8) / priv->data_width;
+  if (priv->channels == 1)
+    {
+      eof_samples *= 2;
+    }
+
+  eof_samples--;
   if (eof_samples > 4095)
     {
       eof_samples = 4095;
@@ -1040,6 +1073,7 @@ static int i2s_rxdma_start(struct esp_i2s_s *priv)
   /* Start RX — this starts BCLK/WS clocks (master mode) */
 
   modifyreg32(I2S_RX_CONF_REG(priv->config->port), 0, I2S_RX_START);
+  priv->rx_running = true;
 
 #else
   i2s_hal_rx_enable_dma(priv->config->ctx);
@@ -1476,12 +1510,22 @@ static void i2s_rx_schedule(struct esp_i2s_s *priv,
 
           sq_addlast((sq_entry_t *)bfcontainer, &priv->rx.done);
 
-          /* Do NOT call i2s_rxdma_start here — we are in ISR context and
-           * i2s_rxdma_start calls i2s_rx_channel_stop/start which call
+          /* With the receiver running, hand the DMA the next buffer at
+           * once, which keeps the gap within what the receiver's FIFO
+           * holds.  Otherwise do NOT call i2s_rxdma_start here — we are in
+           * ISR context and starting the receiver calls
+           * i2s_rx_channel_stop/start, which call
            * up_disable_irq/up_enable_irq on the current IRQ, causing
-           * undefined behavior on Xtensa. DMA restart is deferred to
+           * undefined behavior on Xtensa.  That start is deferred to
            * i2s_rx_worker (HPWORK task context).
            */
+
+#ifdef CONFIG_ARCH_CHIP_ESP32S3
+          if (priv->rx_running)
+            {
+              i2s_rxdma_start(priv);
+            }
+#endif
         }
       else
         {
@@ -2522,6 +2566,7 @@ static void i2s_rx_channel_stop(struct esp_i2s_s *priv)
       up_disable_irq(priv->rx_irq);
 
       priv->rx_started = false;
+      priv->rx_running = false;
 
       i2sinfo("Stopped RX channel of port %" PRIu32 "\n",
               priv->config->port);

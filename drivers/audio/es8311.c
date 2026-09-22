@@ -2271,10 +2271,11 @@ static void es8311_reset(FAR struct es8311_dev_s *priv)
   regconfig &= ~(0x20);
   es8311_writereg(priv, ES8311_CLK_MANAGER_REG06, regconfig);
   es8311_writereg(priv, ES8311_SYSTEM_REG13, 0x10);
-  es8311_writereg(priv, ES8311_ADC_REG1B, 0x0a);
-  es8311_writereg(priv, ES8311_ADC_REG1C, 0x6a);
+  es8311_writereg(priv, ES8311_ADC_REG1B, CONFIG_ES8311_ADC_HPF);
+  es8311_writereg(priv, ES8311_ADC_REG1C, 0x60 | CONFIG_ES8311_ADC_HPF);
   es8311_setvolume(priv, ES_MODULE_ADC, CONFIG_ES8311_INPUT_INITVOLUME);
   es8311_setvolume(priv, ES_MODULE_DAC, CONFIG_ES8311_OUTPUT_INITVOLUME);
+  es8311_setmicgain(priv, CONFIG_ES8311_MIC_GAIN);
 
   /* Leave the analog side powered down until es8311_start: the software
    * reset does not do it, and a stream that ends by itself never reaches
