@@ -2276,6 +2276,18 @@ static void es8311_reset(FAR struct es8311_dev_s *priv)
   es8311_setvolume(priv, ES_MODULE_ADC, CONFIG_ES8311_INPUT_INITVOLUME);
   es8311_setvolume(priv, ES_MODULE_DAC, CONFIG_ES8311_OUTPUT_INITVOLUME);
 
+  /* Leave the analog side powered down until es8311_start: the software
+   * reset does not do it, and a stream that ends by itself never reaches
+   * es8311_stop.  A powered codec (VMID, PGA, ADC, DAC) costs about 20 mA.
+   */
+
+  es8311_writereg(priv, ES8311_SYSTEM_REG0E, 0xff);
+  es8311_writereg(priv, ES8311_SYSTEM_REG12, 0x02);
+  es8311_writereg(priv, ES8311_SYSTEM_REG14, 0x00);
+  es8311_writereg(priv, ES8311_SYSTEM_REG0D, 0xfc);
+  es8311_writereg(priv, ES8311_ADC_REG15,    0x00);
+  es8311_writereg(priv, ES8311_DAC_REG37,    0x08);
+
   es8311_dump_registers(&priv->dev, "After reset");
   audinfo("ES8311 reset complete.\n");
 }
