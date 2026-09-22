@@ -205,7 +205,7 @@ config INPUT_CST3530
 	default n
 	select I2C
 	select INPUT_TOUCHSCREEN
-	depends on SCHED_HPWORK
+	select SCHED_HPWORK
 	---help---
 		Enable support for the Hynitron CST3530 capacitive touch
 		controller, and the CST66xx parts that share its protocol.  The

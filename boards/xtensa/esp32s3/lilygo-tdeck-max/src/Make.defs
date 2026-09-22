@@ -61,6 +61,14 @@ ifeq ($(CONFIG_ESPRESSIF_WIRELESS),y)
 CSRCS += esp32s3_radios.c
 endif
 
+ifeq ($(CONFIG_LPWAN_SX126X),y)
+CSRCS += esp32s3_lora.c
+endif
+
+ifeq ($(CONFIG_SENSORS_GNSS),y)
+CSRCS += esp32s3_gnss.c
+endif
+
 DEPPATH += --dep-path board
 VPATH += :board
 CFLAGS += ${INCDIR_PREFIX}$(TOPDIR)$(DELIM)arch$(DELIM)$(CONFIG_ARCH)$(DELIM)src$(DELIM)board$(DELIM)board

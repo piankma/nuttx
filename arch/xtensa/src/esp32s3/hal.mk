@@ -414,6 +414,16 @@ CFLAGS += ${DEFINE_PREFIX}ESP_PLATFORM=1
 # Dynamic frequency scaling needs it: esp_pm_impl_init() then runs among the
 # startup functions, and esp_pm_configure() does its job.
 
+# The HAL releases memory from heap_caps_malloc() with plain free().  NuttX's
+# heap_caps_malloc() takes it from the kernel heap, and with a separate user
+# heap free() would hand it to the wrong heap: have free() in the HAL's
+# components go back to the heap the block came from.
+
+ifeq ($(CONFIG_MM_KERNEL_HEAP),y)
+chip$(DELIM)$(ESP_HAL_3RDPARTY_REPO)$(DELIM)components$(DELIM)%$(OBJEXT): \
+  CFLAGS += -include $(ARCH_SRCDIR)$(DELIM)common$(DELIM)espressif$(DELIM)esp_hal_free.h
+endif
+
 ifeq ($(CONFIG_ESP32S3_DFS),y)
   CFLAGS += ${DEFINE_PREFIX}CONFIG_PM_ENABLE=1
   CFLAGS += ${DEFINE_PREFIX}CONFIG_PM_LIGHTSLEEP_RTC_OSC_CAL_INTERVAL=1

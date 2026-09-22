@@ -465,10 +465,74 @@ Touch keys reported by the controller are not passed on.
 
 Touches are reported: ``tc`` prints them on the device.
 
+LoRa
+====
+
+The SX1262 is registered as ``/dev/lora0`` with the SX126x driver
+(``LPWAN_SX126X``), and the ``lora`` example sends and receives packets with
+the frequency, spreading factor, bandwidth, coding rate, power, sync word and
+preamble given on the command line::
+
+    nsh> lora tx hello
+    nsh> lora -t 30 rx
+
+The module is the 868 MHz variant, with a TCXO powered from DIO3 at 2.4 V and
+its RF switch on DIO2; the board allows 863-870 MHz and -9 to +22 dBm, with
+14 dBm by default.  The radio is reset when the device is opened and put to
+sleep when it is closed.  DIO1 (GPIO5) is level triggered and a light sleep
+wake-up source, so transmission and reception work while the chip sleeps.
+
+The driver waits for the chip's BUSY line before every command, clears the
+chip's IRQ status in its worker, returns received packets with their RSSI and
+SNR, and takes a receive timeout (``SX126XIOC_RXTIMEOUTSET``) and a LoRa sync
+word (``SX126XIOC_SYNCWORDSET``).  Its setup enables the TCXO, recalibrates,
+calibrates the image rejection for the band in use and applies the
+datasheet's known-limitation fixes.
+
+Transmission is verified: the measured send times follow the calculated time
+on air at SF7, SF9 and SF12.  Reception is verified with a MeshCore node (a
+LilyGo T-Watch S3 at 869.618 MHz, 62.5 kHz, SF8): its Public channel message
+arrived with a good CRC, at -34 dBm and 13 dB SNR, and decrypted to the text
+sent; a message built in MeshCore's format and sent from ``/dev/lora0``
+showed up on the watch.
+
+GNSS
+====
+
+The u-blox MIA-M10Q on UART1 is registered with NuttX's GNSS upper half
+(``SENSORS_GNSS``), which parses its NMEA into the uORB topics
+``sensor_gnss`` and ``sensor_gnss_satellite`` and passes the sentences
+through ``/dev/ttyGNSS0``::
+
+    nsh> gps
+
+``gps`` (the ``gnss`` example) waits for a fix, reports the satellites in
+view while it waits and prints the position in lines that fit the on-device
+terminal; ``-s`` sets the system clock from the fix.
+
+The receiver is powered while any of these is in use: the first user switches
+the ``gps_en`` rail on and starts a thread that feeds the UART to the upper
+half, and five seconds after the last user has gone the thread stops and the
+rail goes off.  Writing to ``/dev/ttyGNSS0`` sends commands to the receiver.
+The build downloads the minmea library, which needs ``unzip``.
+
+NMEA arriving and being parsed into satellite messages is verified, on USB
+and on battery; a position fix has not been tried with a view of the sky.
+
+.. warning::
+
+   The Espressif HAL releases memory from ``heap_caps_malloc()`` with plain
+   ``free()``.  NuttX's ``heap_caps_malloc()`` takes kernel heap memory, so
+   with a separate user heap (``MM_KERNEL_HEAP``, which Wi-Fi with PSRAM
+   forces) ``free()`` handed it to the user heap and corrupted both; every
+   interrupt teardown, such as closing a UART, did it.  ``hal.mk`` now
+   force-includes ``esp_hal_free.h`` into the HAL's components, which sends
+   ``free()`` back to the heap the block came from.
+
 Power
 =====
 
-With the terminal idle and the radios off, the board draws 3 mA on
+With the terminal idle and the radios off or asleep, the board draws 3 mA on
 battery, about 19 days from a full cell, and 28 mA on USB power, where it
 stays awake.  It drew 98 mA before these changes:
 
@@ -646,7 +710,10 @@ Verified on hardware (2026-09-20/21):
   SY6970 charger reports the battery charging.
 * SX1262 over the shared SPI bus: the sync-word register reads ``14 24``; the
   radio starts receiving with the TCXO (2.4 V on DIO3) and DIO2 as RF switch.
-* GNSS: NMEA received on UART1 at 38400 baud.
+* GNSS: NMEA received on UART1 at 38400 baud, and parsed into uORB satellite
+  messages through the GNSS upper half.
+* LoRa: packets transmitted through ``/dev/lora0``, with send times matching
+  the time on air; DIO1 wakes the chip from light sleep.
 * Modem: data from the modem (unsolicited ``+CPIN`` lines) is received on
   UART2.
 * JTAG: OpenOCD and GDB over the USB Serial/JTAG unit, with a breakpoint,
@@ -688,6 +755,7 @@ Not verified:
   limited by its own noise floor, so a passive measurement cannot tell the
   antennas apart.  An 868 MHz signal source, or touching the external antenna
   while watching the readings, is needed.
+* A GNSS position fix: tried only indoors, from a cold start.
 * Transmission to the modem (no reply to ``AT`` was seen).
 * Recovery from repeated failed associations: after a few attempts against an
   access point that was no longer present, ``wapi scan wlan0`` began returning

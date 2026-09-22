@@ -93,7 +93,9 @@ struct xl9555_pin_s
 
 struct xl9555_rail_s
 {
+#ifdef CONFIG_DEV_GPIO
   struct gpio_dev_s gpio;     /* Must be first */
+#endif
   FAR const struct xl9555_pin_s *pin;
   bool held;                  /* Holding the chip out of light sleep */
 };
@@ -160,12 +162,10 @@ static const struct gpio_operations_s g_rail_ops =
   .go_setpintype = tdeckmax_rail_setpintype,
 };
 
-static struct xl9555_rail_s g_rails[4];
 #endif
 
-#ifndef CONFIG_DEV_GPIO
-static struct xl9555_rail_s g_rail;   /* Scratch for the boot levels */
-#endif
+static struct xl9555_rail_s g_rails[4];
+static int g_nrails;
 
 /****************************************************************************
  * Private Functions
@@ -272,15 +272,8 @@ static int tdeckmax_rail_read(FAR struct gpio_dev_s *dev, FAR bool *value)
 static int tdeckmax_rail_write(FAR struct gpio_dev_s *dev, bool value)
 {
   FAR struct xl9555_rail_s *rail = (FAR struct xl9555_rail_s *)dev;
-  int ret;
 
-  ret = IOEXP_WRITEPIN(g_xl9555, rail->pin->pin, value);
-  if (ret >= 0)
-    {
-      tdeckmax_rail_changed(rail, value);
-    }
-
-  return ret;
+  return tdeckmax_xl9555_rail(rail->pin->pin, value);
 }
 
 /****************************************************************************
@@ -309,13 +302,38 @@ struct ioexpander_dev_s *tdeckmax_xl9555_get(void)
 }
 
 /****************************************************************************
+ * Name: tdeckmax_xl9555_rail
+ ****************************************************************************/
+
+int tdeckmax_xl9555_rail(uint8_t pin, bool on)
+{
+  int ret;
+  int i;
+
+  for (i = 0; i < g_nrails; i++)
+    {
+      if (g_rails[i].pin->pin == pin)
+        {
+          ret = IOEXP_WRITEPIN(g_xl9555, pin, on);
+          if (ret >= 0)
+            {
+              tdeckmax_rail_changed(&g_rails[i], on);
+            }
+
+          return ret;
+        }
+    }
+
+  return -ENODEV;
+}
+
+/****************************************************************************
  * Name: tdeckmax_xl9555_initialize
  ****************************************************************************/
 
 int tdeckmax_xl9555_initialize(void)
 {
   struct i2c_master_s *i2c;
-  int nrails = 0;
   int ret;
   int i;
 
@@ -372,17 +390,16 @@ int tdeckmax_xl9555_initialize(void)
            * device's pins, and the chip's sleep, in line with it.
            */
 
+          FAR struct xl9555_rail_s *rail = &g_rails[g_nrails++];
+
+          DEBUGASSERT(g_nrails <= sizeof(g_rails) / sizeof(g_rails[0]));
+          rail->pin = p;
+          tdeckmax_rail_changed(rail, p->initial);
 #ifdef CONFIG_DEV_GPIO
-          DEBUGASSERT(nrails < sizeof(g_rails) / sizeof(g_rails[0]));
-          g_rails[nrails].gpio.gp_pintype = GPIO_OUTPUT_PIN;
-          g_rails[nrails].gpio.gp_ops     = &g_rail_ops;
-          g_rails[nrails].pin             = p;
-          tdeckmax_rail_changed(&g_rails[nrails], p->initial);
-          ret = gpio_pin_register_byname(&g_rails[nrails++].gpio, p->name);
+          rail->gpio.gp_pintype = GPIO_OUTPUT_PIN;
+          rail->gpio.gp_ops     = &g_rail_ops;
+          ret = gpio_pin_register_byname(&rail->gpio, p->name);
 #else
-          g_rail.pin  = p;
-          g_rail.held = false;
-          tdeckmax_rail_changed(&g_rail, p->initial);
           ret = OK;
 #endif
         }

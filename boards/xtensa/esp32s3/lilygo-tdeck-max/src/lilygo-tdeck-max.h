@@ -111,6 +111,27 @@ int tdeckmax_xl9555_initialize(void);
  ****************************************************************************/
 
 struct ioexpander_dev_s *tdeckmax_xl9555_get(void);
+
+/****************************************************************************
+ * Name: tdeckmax_xl9555_rail
+ *
+ * Description:
+ *   Switch one of the power rails that come with their own device (LoRa,
+ *   GPS, modem, amplifier), the same way writing to /dev/<name> does: the
+ *   device's ESP32-S3 pins follow the rail, and the chip is held out of
+ *   light sleep while a rail that needs it is on.
+ *
+ * Input Parameters:
+ *   pin - The XL9555 pin, XL9555_PIN_xxx
+ *   on  - true to switch the rail on
+ *
+ * Returned Value:
+ *   Zero (OK) on success; a negated errno value on failure, -ENODEV if
+ *   the pin is not such a rail.
+ *
+ ****************************************************************************/
+
+int tdeckmax_xl9555_rail(uint8_t pin, bool on);
 #endif
 
 /****************************************************************************
@@ -128,6 +149,40 @@ struct ioexpander_dev_s *tdeckmax_xl9555_get(void);
 
 #ifdef CONFIG_ESP32S3_SPI2
 int tdeckmax_lora_sleep(void);
+#endif
+
+/****************************************************************************
+ * Name: tdeckmax_lora_initialize
+ *
+ * Description:
+ *   Register the SX1262 as /dev/lora0 (the NuttX SX126x driver).  The
+ *   radio stays asleep while the device is closed.
+ *
+ * Returned Value:
+ *   Zero (OK) on success; a negated errno value on failure.
+ *
+ ****************************************************************************/
+
+#ifdef CONFIG_LPWAN_SX126X
+int tdeckmax_lora_initialize(void);
+#endif
+
+/****************************************************************************
+ * Name: tdeckmax_gnss_initialize
+ *
+ * Description:
+ *   Register the MIA-M10Q GNSS receiver with NuttX's GNSS upper half:
+ *   uORB topics sensor_gnss0 and sensor_gnss_satellite0, and the raw NMEA
+ *   stream /dev/ttyGNSS0.  The receiver is powered while any of them is
+ *   in use.
+ *
+ * Returned Value:
+ *   Zero (OK) on success; a negated errno value on failure.
+ *
+ ****************************************************************************/
+
+#if defined(CONFIG_SENSORS_GNSS) && defined(CONFIG_IOEXPANDER_PCA9555)
+int tdeckmax_gnss_initialize(void);
 #endif
 
 /****************************************************************************

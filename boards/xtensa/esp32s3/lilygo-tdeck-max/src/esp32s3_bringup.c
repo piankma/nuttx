@@ -153,6 +153,26 @@ int esp32s3_bringup(void)
     }
 #endif
 
+#if defined(CONFIG_ESP32S3_SPI2) && defined(CONFIG_LPWAN_SX126X)
+  /* Register /dev/lora0 */
+
+  ret = tdeckmax_lora_initialize();
+  if (ret < 0)
+    {
+      syslog(LOG_ERR, "ERROR: Failed to initialize the SX1262: %d\n", ret);
+    }
+#endif
+
+#if defined(CONFIG_SENSORS_GNSS) && defined(CONFIG_IOEXPANDER_PCA9555)
+  /* Register the GNSS receiver (uORB sensor_gnss0, /dev/ttyGNSS0) */
+
+  ret = tdeckmax_gnss_initialize();
+  if (ret < 0)
+    {
+      syslog(LOG_ERR, "ERROR: Failed to initialize the GNSS: %d\n", ret);
+    }
+#endif
+
 #ifdef CONFIG_MMCSD_SPI
   /* Register /dev/mmcsd0 for the microSD slot */
 

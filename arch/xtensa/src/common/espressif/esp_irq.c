@@ -151,6 +151,13 @@ extern void esp_xtensa_intr_init(void);
 
 static volatile intr_handle_t g_handle_map[CONFIG_SMP_NCPUS][NR_IRQS];
 
+/* The adapter arguments allocated for each attached IRQ, freed when it is
+ * detached.
+ */
+
+static struct intr_adapter_from_nuttx *
+  g_adapter_map[CONFIG_SMP_NCPUS][NR_IRQS];
+
 #ifdef CONFIG_ESPRESSIF_IRAM_ISR_DEBUG
 /* The g_iram_count keeps track of how many times such an IRQ ran when the
  * non-IRAM interrupts were disabled.
@@ -801,6 +808,7 @@ int esp_setup_irq_with_flags_intrstatus(int source,
    */
 
   esp_set_handle(this_cpu(), irq, ret_handle);
+  g_adapter_map[this_cpu()][irq] = isr_adapter_args;
 
   return cpuint;
 }
@@ -843,6 +851,11 @@ void esp_teardown_irq(int source, int cpuint)
   if (ret != ESP_OK)
     {
       irqerr("Failed to free interrupt %d\n", source);
+    }
+  else
+    {
+      kmm_free(g_adapter_map[cpu][irq]);
+      g_adapter_map[cpu][irq] = NULL;
     }
 
   esp_clear_handle(cpu, irq);
