@@ -45,6 +45,7 @@
 #include <arch/board/board.h>
 
 #include "esp32s3_spi.h"
+#include "esp32s3_sleep.h"
 #include "esp_irq.h"
 #include "esp_gpio.h"
 
@@ -896,6 +897,14 @@ static void esp32s3_spi_dma_exchange(struct esp32s3_spi_priv_s *priv,
       memset(tp, 0, bytes);
     }
 
+#ifdef CONFIG_ESP32S3_AUTO_SLEEP
+  /* The controller and DMA stop while the chip is in light sleep, and the
+   * completion interrupt does not wake the chip up.
+   */
+
+  esp32s3_sleep_hold();
+#endif
+
   esp32s3_spi_set_regbits(SPI_DMA_INT_CLR_REG(priv->config->id),
                           SPI_TRANS_DONE_INT_CLR_M);
 
@@ -978,6 +987,10 @@ static void esp32s3_spi_dma_exchange(struct esp32s3_spi_priv_s *priv,
 
   esp32s3_spi_clr_regbits(SPI_DMA_INT_ENA_REG(priv->config->id),
                           SPI_TRANS_DONE_INT_ENA_M);
+
+#ifdef CONFIG_ESP32S3_AUTO_SLEEP
+  esp32s3_sleep_release();
+#endif
 }
 #endif
 

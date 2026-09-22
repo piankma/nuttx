@@ -50,6 +50,9 @@
 
 #include "espressif/esp_gpio.h"
 #include "esp32s3_i2c.h"
+#ifdef CONFIG_ESP32S3_AUTO_SLEEP
+#  include "esp32s3_sleep.h"
+#endif
 
 #include "lilygo-tdeck-max.h"
 
@@ -191,8 +194,8 @@ static void tdeckmax_kbd_enable(FAR const struct tca8418_config_s *config,
  * Name: tdeckmax_kbd_clear
  *
  * Description:
- *   Nothing to do: the GPIO peripheral clears its own pending status when
- *   the interrupt is dispatched.
+ *   Nothing to do: the interrupt is level triggered, and the GPIO
+ *   peripheral clears its own pending status when it is dispatched.
  *
  ****************************************************************************/
 
@@ -217,10 +220,18 @@ int tdeckmax_keyboard_initialize(void)
   FAR struct i2c_master_s *i2c;
 
   /* The scanner pulls its interrupt line down and holds it there until the
-   * event FIFO is read, so a falling edge is the event to catch.
+   * event FIFO is read.  The interrupt is taken on the low level rather
+   * than the falling edge: light sleep only wakes on levels, and an edge
+   * that arrives while the chip sleeps is lost, which would leave the line
+   * low with nothing ever reading the FIFO.  The driver masks the
+   * interrupt until it has drained the FIFO.
    */
 
-  esp_configgpio(BOARD_KEYBOARD_INT, INPUT | PULLUP | FALLING);
+  esp_configgpio(BOARD_KEYBOARD_INT, INPUT | PULLUP | ONLOW);
+
+#ifdef CONFIG_ESP32S3_AUTO_SLEEP
+  esp32s3_sleep_wake_on_gpio(BOARD_KEYBOARD_INT, false);
+#endif
 
   i2c = esp32s3_i2cbus_initialize(TDECKMAX_I2C_PORT);
   if (i2c == NULL)

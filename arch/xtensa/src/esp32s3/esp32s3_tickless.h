@@ -1,5 +1,7 @@
 /****************************************************************************
- * arch/xtensa/src/esp32s3/esp32s3_usbserial.h
+ * arch/xtensa/src/esp32s3/esp32s3_tickless.h
+ *
+ * SPDX-License-Identifier: Apache-2.0
  *
  * Licensed to the Apache Software Foundation (ASF) under one or more
  * contributor license agreements.  See the NOTICE file distributed with
@@ -18,49 +20,34 @@
  *
  ****************************************************************************/
 
-#ifndef __ARCH_XTENSA_SRC_ESP32S3_ESP32S3_USBSERIAL_H
-#define __ARCH_XTENSA_SRC_ESP32S3_ESP32S3_USBSERIAL_H
+#ifndef __ARCH_XTENSA_SRC_ESP32S3_ESP32S3_TICKLESS_H
+#define __ARCH_XTENSA_SRC_ESP32S3_ESP32S3_TICKLESS_H
 
 /****************************************************************************
  * Included Files
  ****************************************************************************/
 
-#include <nuttx/serial/serial.h>
+#include <nuttx/config.h>
+
+#include <stdint.h>
+
+#ifdef CONFIG_SCHED_TICKLESS
 
 /****************************************************************************
- * Public Data
+ * Public Function Prototypes
  ****************************************************************************/
 
-extern uart_dev_t g_uart_usbserial;
-
 /****************************************************************************
- * Public Functions Prototypes
- ****************************************************************************/
-
-/****************************************************************************
- * Name: esp32s3_usbserial_write
+ * Name: esp32s3_tickless_next
  *
  * Description:
- *   Write one character through the USB serial.  Used mainly for early
- *   debugging.
+ *   Return the time until the scheduler's interval timer expires, in
+ *   microseconds: 0 if it is due, UINT64_MAX if it is not running.  The
+ *   light sleep logic uses it to wake up in time.
  *
  ****************************************************************************/
 
-void esp32s3_usbserial_write(char ch);
+uint64_t esp32s3_tickless_next(void);
 
-/****************************************************************************
- * Name: esp32s3_usbserial_connect
- *
- * Description:
- *   Connect the USB Serial/JTAG port to the USB pins, or disconnect it, as
- *   if the cable had been unplugged: the host sees the device go, and
- *   enumerates it afresh when it is connected again.  A board that sleeps
- *   while nothing is plugged in keeps the port disconnected meanwhile, so
- *   that the host is not offered a device that keeps vanishing each time
- *   light sleep switches the pins off.
- *
- ****************************************************************************/
-
-void esp32s3_usbserial_connect(bool connect);
-
-#endif /* __ARCH_XTENSA_SRC_ESP32S3_ESP32S3_USBSERIAL_H */
+#endif /* CONFIG_SCHED_TICKLESS */
+#endif /* __ARCH_XTENSA_SRC_ESP32S3_ESP32S3_TICKLESS_H */

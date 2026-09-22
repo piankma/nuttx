@@ -49,6 +49,7 @@
 #include "esp32s3_wdt.h"
 #include "esp32s3_dma.h"
 #include "esp32s3_dfs.h"
+#include "esp32s3_sleep.h"
 #ifdef CONFIG_BUILD_PROTECTED
 #  include "esp32s3_userspace.h"
 #endif
@@ -485,6 +486,12 @@ void weak_function xtensa_soc_initialize(void)
   /* The startup functions have initialized the HAL's power management */
 
   esp32s3_dfs_initialize();
+#endif
+
+#ifdef CONFIG_ESP32S3_AUTO_SLEEP
+  /* ...and configured the pins for sleep, which this undoes */
+
+  esp32s3_sleep_initialize();
 #endif
 }
 

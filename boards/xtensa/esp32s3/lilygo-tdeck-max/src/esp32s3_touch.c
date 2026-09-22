@@ -22,7 +22,7 @@
 
 /****************************************************************************
  * The e-paper panel is covered by a CST3530 capacitive touch controller on
- * the shared I2C bus.  Its interrupt is GPIO12, pulled low for each report,
+ * the shared I2C bus.  Its interrupt is GPIO12, pulled low for a report,
  * and its reset is the XL9555's touch_rst line.  The vendor's firmware maps
  * its coordinates straight onto the panel, with no swapping or mirroring.
  ****************************************************************************/
@@ -45,6 +45,9 @@
 
 #include "espressif/esp_gpio.h"
 #include "esp32s3_i2c.h"
+#ifdef CONFIG_ESP32S3_AUTO_SLEEP
+#  include "esp32s3_sleep.h"
+#endif
 
 #include "lilygo-tdeck-max.h"
 
@@ -150,7 +153,16 @@ int tdeckmax_touch_initialize(void)
 {
   FAR struct i2c_master_s *i2c;
 
-  esp_configgpio(BOARD_TOUCH_INT, INPUT | PULLUP | FALLING);
+  /* Level triggered, for the same reason as the keyboard's: light sleep
+   * only wakes on levels, and edges that arrive while it sleeps are lost.
+   * The driver masks the interrupt until it has read the report.
+   */
+
+  esp_configgpio(BOARD_TOUCH_INT, INPUT | PULLUP | ONLOW);
+
+#ifdef CONFIG_ESP32S3_AUTO_SLEEP
+  esp32s3_sleep_wake_on_gpio(BOARD_TOUCH_INT, false);
+#endif
 
   i2c = esp32s3_i2cbus_initialize(TDECKMAX_I2C_PORT);
   if (i2c == NULL)

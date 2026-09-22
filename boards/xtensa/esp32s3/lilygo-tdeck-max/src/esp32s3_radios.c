@@ -67,6 +67,10 @@
 #  include "esp32s3_wifi_adapter.h"
 #endif
 
+#ifdef CONFIG_ESP32S3_AUTO_SLEEP
+#  include "esp32s3_sleep.h"
+#endif
+
 #include "lilygo-tdeck-max.h"
 
 #ifdef CONFIG_ESPRESSIF_WIRELESS
@@ -364,13 +368,20 @@ static int tdeckmax_enable(CODE int (*start)(void), FAR bool *enabled,
     {
       ret = OK;
     }
-  else if (isolate)
-    {
-      ret = tdeckmax_run_isolated(start);
-    }
   else
     {
-      ret = start();
+      ret = isolate ? tdeckmax_run_isolated(start) : start();
+
+#ifdef CONFIG_ESP32S3_AUTO_SLEEP
+      if (*enabled)
+        {
+          /* The radio drivers are not prepared for light sleep, and a
+           * radio cannot be stopped again: keep the chip awake from now on.
+           */
+
+          esp32s3_sleep_hold();
+        }
+#endif
     }
 
   nxmutex_unlock(&g_radio_lock);

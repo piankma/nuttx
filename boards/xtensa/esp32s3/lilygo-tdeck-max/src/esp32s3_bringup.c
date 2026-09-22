@@ -46,10 +46,6 @@
 #  include "esp32s3_board_sdmmc.h"
 #endif
 
-#ifdef CONFIG_ESPRESSIF_LEDC
-#  include "esp32s3_board_ledc.h"
-#endif
-
 #ifdef CONFIG_LCD_UC8253
 #  include <nuttx/board.h>
 #  include <nuttx/lcd/lcd.h>
@@ -59,6 +55,10 @@
 #  ifdef CONFIG_VIDEO_FB
 #    include <nuttx/video/fb.h>
 #  endif
+#endif
+
+#ifdef CONFIG_ESP32S3_AUTO_SLEEP
+#  include "esp32s3_sleep.h"
 #endif
 
 #include "lilygo-tdeck-max.h"
@@ -185,6 +185,14 @@ int esp32s3_bringup(void)
     }
 #endif
 
+#if defined(CONFIG_ESP32S3_AUTO_SLEEP) && !defined(CONFIG_SY6970)
+  /* Only the charger can tell whether USB is connected, and light sleep
+   * would disconnect a USB console.  Without it, never sleep.
+   */
+
+  esp32s3_sleep_hold();
+#endif
+
 #ifdef CONFIG_FF_DRV2605
   /* Register /dev/input_ff0, the vibration motor */
 
@@ -205,12 +213,12 @@ int esp32s3_bringup(void)
     }
 #endif
 
-#ifdef CONFIG_ESPRESSIF_LEDC
-  /* Register /dev/pwm0.  Channel 0 is the e-paper frontlight and channel 1
+#if defined(CONFIG_ESPRESSIF_LEDC) && defined(CONFIG_PWM)
+  /* Register /dev/pwm0.  Channel 1 is the e-paper frontlight and channel 2
    * is the keyboard backlight; both are off until something drives them.
    */
 
-  ret = esp32s3_pwm_setup();
+  ret = tdeckmax_pwm_initialize();
   if (ret < 0)
     {
       syslog(LOG_ERR, "ERROR: Failed to initialize PWM: %d\n", ret);
@@ -259,6 +267,12 @@ int esp32s3_bringup(void)
     {
       syslog(LOG_ERR, "ERROR: Failed to initialize the radios: %d\n", ret);
     }
+#endif
+
+#ifdef CONFIG_ESP32S3_AUTO_SLEEP
+  /* Every wake-up source and hold is in place: let the chip sleep */
+
+  esp32s3_sleep_release();
 #endif
 
   UNUSED(ret);

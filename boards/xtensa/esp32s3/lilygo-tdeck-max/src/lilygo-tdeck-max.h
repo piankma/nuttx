@@ -185,6 +185,23 @@ int tdeckmax_haptic_initialize(void);
 #endif
 
 /****************************************************************************
+ * Name: tdeckmax_pwm_initialize
+ *
+ * Description:
+ *   Register the backlights' LEDC PWM as /dev/pwm0, holding the chip out of
+ *   light sleep while the output runs.
+ *
+ * Returned Value:
+ *   Zero (OK) is returned on success; A negated errno value is returned
+ *   to indicate the nature of any failure.
+ *
+ ****************************************************************************/
+
+#if defined(CONFIG_ESPRESSIF_LEDC) && defined(CONFIG_PWM)
+int tdeckmax_pwm_initialize(void);
+#endif
+
+/****************************************************************************
  * Name: tdeckmax_touch_initialize
  *
  * Description:

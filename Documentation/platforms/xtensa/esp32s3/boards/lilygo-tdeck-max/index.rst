@@ -468,8 +468,31 @@ Touches are reported: ``tc`` prints them on the device.
 Power
 =====
 
-With the terminal idle and the radios off, the board draws 28 mA, about
-50 hours from a full cell.  It drew 98 mA before these changes:
+With the terminal idle and the radios off, the board draws 3 mA on
+battery, about 19 days from a full cell, and 28 mA on USB power, where it
+stays awake.  It drew 98 mA before these changes:
+
+* The ``full`` configuration puts the chip into light sleep from the idle
+  loop (``ESP32S3_AUTO_SLEEP``) whenever nothing is due for 20 ms or more.
+  It wakes on the next timer, a key, or a touch while ``/dev/input0`` is
+  open; pins, memory and CPU state are kept, and NuttX's clock stays close:
+  it gained 1.83 s over 3 h 51 min asleep (+132 ppm).  Time asleep is kept
+  by the internal RC oscillator, as the board has no 32 kHz crystal.
+  The chip is held awake while USB power is present (the charger's power
+  good status, checked every 2 s), while a backlight is on, while the GPS,
+  modem or audio amplifier rail is on, and once Wi-Fi or BLE has been
+  brought up.  Without USB power the USB Serial/JTAG port is disconnected.
+  The I2C driver, and the SPI driver's DMA transfers, also hold it awake
+  for each transfer: the controller stops in light sleep and its interrupt
+  does not wake the chip, so each I2C message used to wait for the next
+  timer, up to its 500 ms timeout.  With the CPU powered down during sleep
+  as well (``ESP32S3_AUTO_SLEEP_CPU_PD``), the idle chip wakes only for the
+  USB power check every 2 s.
+
+* The scheduler no longer leaves the round-robin timeslice timer running
+  after a round-robin task (every task, by default) goes back to waiting,
+  which woke the CPU once for nothing after each task wake-up.  With the
+  I2C change this took the sleeping board from 8.2 mA to 3.0 mA.
 
 * The ``full`` configuration scales the CPU frequency
   (``ESP32S3_DFS``): 240 MHz whenever anything runs, 80 MHz while the CPU is
@@ -506,7 +529,10 @@ With the terminal idle and the radios off, the board draws 28 mA, about
 The draw can be measured with USB connected: setting ``EN_HIZ`` (bit 7 of
 the SY6970's register 0x00) disconnects USB power, so the board runs from
 the battery and the fuel gauge reports its current, while USB data keeps
-working.  It must be cleared again afterwards.
+working.  It must be cleared again afterwards; the charger driver clears it
+at boot.  With light sleep the USB console goes away as soon as USB power
+does, so the measurement has to run on the device, from a script that sets
+``EN_HIZ``, logs ``batterydump`` output to a file and clears it again.
 
 Frequency scaling uses the HAL's power management, which the build enables
 for the HAL (``CONFIG_PM_ENABLE``) only with ``ESP32S3_DFS``; NuttX's own
@@ -517,11 +543,14 @@ delays stay right at either frequency.
 
 .. note::
 
-   After BLE has been brought up, the radio's RF section stays powered
-   through a software or USB reset, costing about 18 mA until the board is
-   power cycled.  Starting and stopping Wi-Fi once (``ifup wlan0`` then
-   ``ifdown wlan0``) switches it off.  A JTAG session similarly leaves the
-   chip drawing about 5 mA more until the next reset.
+   After BLE has been brought up, a reset that does not switch the
+   controller off first leaves the radio's RF section powered, about 13 mA,
+   until the board is power cycled.  ``reboot`` does switch it off: the BLE
+   adapter registers a shutdown handler, which ``board_reset()`` runs.  A USB
+   reset (esptool), ``reboot 1`` or a crash do not; bringing BLE up and
+   running ``reboot``, or starting and stopping Wi-Fi once (``ifup wlan0``
+   then ``ifdown wlan0``), switches it off.  A JTAG session similarly leaves
+   the chip drawing about 5 mA more until the next reset.
 
 .. warning::
 

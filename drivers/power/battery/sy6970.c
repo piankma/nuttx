@@ -55,6 +55,7 @@
 /* REG00: input source control */
 
 #define SY6970_REG00                 0x00
+#define SY6970_EN_HIZ                (1 << 7)  /* Input disconnected */
 #define SY6970_EN_ILIM               (1 << 6)  /* ILIM pin limits too */
 #define SY6970_IINLIM_MASK           0x3f
 #define SY6970_IINLIM_BASE           100       /* mA */
@@ -565,6 +566,18 @@ sy6970_initialize(FAR struct i2c_master_s *i2c, uint8_t addr,
       baterr("ERROR: Failed to disable the watchdog: %d\n", ret);
       kmm_free(priv);
       return NULL;
+    }
+
+  /* The charger keeps its registers through a reset of the host, and with
+   * its input left in high impedance mode it neither charges nor powers
+   * the system from USB, while reporting no input.  Start with the input
+   * connected.
+   */
+
+  ret = sy6970_modifyreg(priv, SY6970_REG00, SY6970_EN_HIZ, 0);
+  if (ret < 0)
+    {
+      baterr("ERROR: Failed to connect the input: %d\n", ret);
     }
 
   return &priv->dev;

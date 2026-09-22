@@ -49,6 +49,7 @@
 
 #include "esp_gpio.h"
 #include "esp32s3_i2c.h"
+#include "esp32s3_sleep.h"
 #include "esp_irq.h"
 
 #include "xtensa.h"
@@ -1176,6 +1177,17 @@ static int i2c_transfer(struct i2c_master_s *dev, struct i2c_msg_s *msgs,
 
   i2c_pm_stay();
 
+#ifdef CONFIG_ESP32S3_AUTO_SLEEP
+  /* The same for automatic light sleep, which the PM domain does not
+   * control: the controller stops while the chip is in light sleep, and
+   * its interrupt does not wake the chip up, so every message would wait
+   * for whatever timer wakes the chip next, the transfer timeout at the
+   * latest.
+   */
+
+  esp32s3_sleep_hold();
+#endif
+
   /* If previous state is different than idle,
    * reset the FSMC to the idle state.
    */
@@ -1296,6 +1308,11 @@ static int i2c_transfer(struct i2c_master_s *dev, struct i2c_msg_s *msgs,
   /* Dump the trace result */
 
   i2c_tracedump(priv);
+
+#ifdef CONFIG_ESP32S3_AUTO_SLEEP
+  esp32s3_sleep_release();
+#endif
+
   i2c_pm_relax();
   nxmutex_unlock(&priv->lock);
 

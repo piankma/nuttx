@@ -175,6 +175,50 @@ config ESP32S3_DFS_MIN_FREQ_MHZ
 
 endif # ESP32S3_DFS
 
+config ESP32S3_AUTO_SLEEP
+	bool "Automatic light sleep"
+	default n
+	depends on ESP32S3_TICKLESS && !SMP
+	---help---
+		Put the chip into light sleep from the idle loop whenever nothing
+		is due for at least ESP32S3_AUTO_SLEEP_MIN_US, instead of only
+		stopping the CPU until the next interrupt.  Light sleep stops the
+		clocks and the crystal while keeping the CPU state, the memory and
+		the pins as they are; the chip wakes on the next timer, or on a GPIO
+		enabled with esp32s3_sleep_wake_on_gpio().  Other interrupts do not
+		wake it, and are serviced only once it wakes.
+
+		While asleep the USB Serial/JTAG port is disconnected, peripherals
+		that run from the APB clock (UART, LEDC, SPI, I2C...) stop, and
+		time is kept by the internal RC oscillator.  Code that needs any
+		of those, such as a board with its USB console connected, holds
+		the chip awake with esp32s3_sleep_hold() for as long as it does.
+
+if ESP32S3_AUTO_SLEEP
+
+config ESP32S3_AUTO_SLEEP_MIN_US
+	int "Shortest idle time worth sleeping (us)"
+	default 20000
+	---help---
+		Entering and leaving light sleep takes about a millisecond of
+		running at full power, plus the calibration of the slow clock, so
+		shorter idle periods are spent waiting for an interrupt instead.
+
+config ESP32S3_AUTO_SLEEP_CPU_PD
+	bool "Power the CPU down in light sleep"
+	default n
+	depends on !ESP32S3_SPIRAM_COMMON_HEAP
+	---help---
+		Power the CPU and its caches down during light sleep.  The RTC
+		controller saves their state into internal RAM before and restores
+		it after, so the software does not notice.  Espressif quotes about
+		650 uA less in light sleep on the ESP32-S3, for about 17 KB of
+		internal RAM taken from the kernel heap.  The controller reaches
+		that memory by DMA, so it must be internal RAM: not available while
+		PSRAM is part of the kernel heap.
+
+endif # ESP32S3_AUTO_SLEEP
+
 menu "Cache configuration"
 
 choice

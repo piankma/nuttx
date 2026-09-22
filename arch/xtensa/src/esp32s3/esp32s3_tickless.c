@@ -64,6 +64,7 @@
 #include "hardware/esp32s3_systimer.h"
 #include "hardware/esp32s3_system.h"
 #include "hardware/esp32s3_soc.h"
+#include "esp32s3_tickless.h"
 
 #ifdef CONFIG_SCHED_TICKLESS
 
@@ -440,6 +441,36 @@ int IRAM_ATTR up_timer_start(const struct timespec *ts)
   leave_critical_section(flags);
 
   return OK;
+}
+
+/****************************************************************************
+ * Name: esp32s3_tickless_next
+ *
+ * Description:
+ *   See esp32s3_tickless.h.
+ *
+ ****************************************************************************/
+
+uint64_t IRAM_ATTR esp32s3_tickless_next(void)
+{
+  irqstate_t flags;
+  uint64_t counter;
+  uint64_t alarm;
+
+  flags = enter_critical_section();
+
+  if (!g_timer_started)
+    {
+      leave_critical_section(flags);
+      return UINT64_MAX;
+    }
+
+  counter = tickless_getcounter();
+  alarm   = tickless_getalarmvalue();
+
+  leave_critical_section(flags);
+
+  return alarm > counter ? CTICK_2_USEC(alarm - counter) : 0;
 }
 
 /****************************************************************************

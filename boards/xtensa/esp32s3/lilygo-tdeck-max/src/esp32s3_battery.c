@@ -38,6 +38,8 @@
 #include <errno.h>
 #include <debug.h>
 
+#include <nuttx/clock.h>
+#include <nuttx/wqueue.h>
 #include <nuttx/i2c/i2c_master.h>
 #include <nuttx/power/battery_charger.h>
 #include <nuttx/power/battery_gauge.h>
@@ -45,6 +47,12 @@
 #include <nuttx/power/sy6970.h>
 
 #include "esp32s3_i2c.h"
+#ifdef CONFIG_ESP32S3_AUTO_SLEEP
+#  include "esp32s3_sleep.h"
+#endif
+#ifdef CONFIG_ESP32S3_USBSERIAL
+#  include "esp32s3_usbserial.h"
+#endif
 
 #include "lilygo-tdeck-max.h"
 
@@ -55,6 +63,13 @@
  ****************************************************************************/
 
 #define TDECKMAX_BATTERY_I2C_FREQUENCY 400000
+
+/* How often to check for USB power.  This is how long a USB cable plugged
+ * into a sleeping board takes to be noticed; the check itself wakes the
+ * chip for about a millisecond.
+ */
+
+#define TDECKMAX_USB_POLL_MS           2000
 
 /****************************************************************************
  * Private Functions
@@ -84,6 +99,71 @@ static int tdeckmax_gauge_initialize(FAR struct i2c_master_s *i2c)
 
   return battery_gauge_register("/dev/batt0", gauge);
 }
+#endif
+
+#if defined(CONFIG_SY6970) && defined(CONFIG_ESP32S3_AUTO_SLEEP)
+
+/****************************************************************************
+ * Name: tdeckmax_usb_poll
+ *
+ * Description:
+ *   Hold the chip out of light sleep while USB power is present.  Light
+ *   sleep disconnects the USB Serial/JTAG port, which would take the USB
+ *   console away from a computer.  There is no pin that tells the ESP32-S3
+ *   about USB power, but the charger knows: its power good status.  On a
+ *   wall charger this keeps the chip awake too, which costs nothing that
+ *   matters while it charges.
+ *
+ *   Without USB power the port is disconnected as well.  Light sleep
+ *   switches its pins off and on at every sleep, and a host would keep
+ *   seeing a device appear for a moment, fail to enumerate it and, after
+ *   a while, stop trying: it might then miss the device that stays when
+ *   USB power comes back.  Connected once, with the chip held awake, the
+ *   host sees a single clean attach.
+ *
+ ****************************************************************************/
+
+static FAR struct battery_charger_dev_s *g_charger;
+static struct work_s g_usb_work;
+static bool g_usb_held;
+
+static void tdeckmax_usb_poll(FAR void *arg)
+{
+  bool online;
+
+  /* If the charger does not answer, stay awake rather than risk losing
+   * the console.
+   */
+
+  if (g_charger->ops->online(g_charger, &online) < 0)
+    {
+      online = true;
+    }
+
+  if (online != g_usb_held)
+    {
+      if (online)
+        {
+          esp32s3_sleep_hold();
+#ifdef CONFIG_ESP32S3_USBSERIAL
+          esp32s3_usbserial_connect(true);
+#endif
+        }
+      else
+        {
+#ifdef CONFIG_ESP32S3_USBSERIAL
+          esp32s3_usbserial_connect(false);
+#endif
+          esp32s3_sleep_release();
+        }
+
+      g_usb_held = online;
+    }
+
+  work_queue(LPWORK, &g_usb_work, tdeckmax_usb_poll, NULL,
+             MSEC2TICK(TDECKMAX_USB_POLL_MS));
+}
+
 #endif
 
 /****************************************************************************
@@ -119,6 +199,15 @@ static int tdeckmax_charger_initialize(FAR struct i2c_master_s *i2c)
 
       syslog(LOG_ERR, "ERROR: Failed to configure the charger: %d\n", ret);
     }
+
+#ifdef CONFIG_ESP32S3_AUTO_SLEEP
+  /* Check for USB power now, before the chip can first go to sleep, and
+   * from then on every TDECKMAX_USB_POLL_MS.
+   */
+
+  g_charger = charger;
+  tdeckmax_usb_poll(NULL);
+#endif
 
   return battery_charger_register("/dev/charger0", charger);
 }

@@ -54,6 +54,9 @@
 #include "espressif/esp_wifi_utils.h"
 
 #include "esp32s3_wifi_adapter.h"
+#ifdef CONFIG_ESP32S3_AUTO_SLEEP
+#  include "esp32s3_sleep.h"
+#endif
 #include "periph_ctrl.h"
 
 #ifdef CONFIG_PM
@@ -1907,7 +1910,7 @@ static void esp_dport_access_stall_other_cpu_end(void)
 static void wifi_apb80m_request(void)
 {
 #ifdef CONFIG_ESP32S3_AUTO_SLEEP
-  esp32s3_pm_lockacquire();
+  esp32s3_sleep_hold();
 #endif
 }
 
@@ -1922,7 +1925,7 @@ static void wifi_apb80m_request(void)
 static void wifi_apb80m_release(void)
 {
 #ifdef CONFIG_ESP32S3_AUTO_SLEEP
-  esp32s3_pm_lockrelease();
+  esp32s3_sleep_release();
 #endif
 }
 

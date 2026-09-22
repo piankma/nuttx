@@ -58,7 +58,9 @@ struct cst3530_config_s
   uint8_t  flags;      /* TOUCH_FLAG_SWAPXY / MIRRORX / MIRRORY */
 
   /* Attach isr to the interrupt line, active low: the controller pulls it
-   * down for each new report.  The interrupt is left disabled.
+   * down for each new report.  It may be edge or level triggered; the
+   * driver masks it while it reads a report.  The interrupt is left
+   * disabled.
    */
 
   CODE int  (*attach)(FAR const struct cst3530_config_s *config,

@@ -43,6 +43,9 @@
 #include "espressif/esp_gpio.h"
 #include "hardware/esp32s3_gpio_sigmap.h"
 #include "esp32s3_i2c.h"
+#ifdef CONFIG_ESP32S3_AUTO_SLEEP
+#  include "esp32s3_sleep.h"
+#endif
 #include "lilygo-tdeck-max.h"
 
 /****************************************************************************
@@ -74,17 +77,25 @@ struct xl9555_pin_s
   /* Called after the line changes, to look after the device's pins */
 
   CODE void (*powered)(bool on);
+
+  /* The device talks to the ESP32-S3 through a peripheral that stops in
+   * light sleep (a UART, I2S), so the chip stays awake while it is on.
+   */
+
+  bool awake;
 };
 
-/* A power rail whose device needs its ESP32-S3 pins looked after when the
- * rail changes.  It is registered as a GPIO device of its own so that every
- * change, whoever makes it, goes through the hook.
+/* A power rail that needs more than the line changed: its device's
+ * ESP32-S3 pins looked after, or the chip kept awake while it is on.  It is
+ * registered as a GPIO device of its own so that every change, whoever
+ * makes it, goes through tdeckmax_rail_changed().
  */
 
 struct xl9555_rail_s
 {
   struct gpio_dev_s gpio;     /* Must be first */
   FAR const struct xl9555_pin_s *pin;
+  bool held;                  /* Holding the chip out of light sleep */
 };
 
 /****************************************************************************
@@ -93,6 +104,7 @@ struct xl9555_rail_s
 
 static void tdeckmax_lora_rail(bool on);
 static void tdeckmax_gps_rail(bool on);
+static void tdeckmax_rail_changed(FAR struct xl9555_rail_s *rail, bool on);
 
 #ifdef CONFIG_DEV_GPIO
 static int  tdeckmax_rail_read(FAR struct gpio_dev_s *dev,
@@ -117,15 +129,15 @@ static int  tdeckmax_rail_setpintype(FAR struct gpio_dev_s *dev,
 
 static struct xl9555_pin_s g_xl9555_pins[] =
 {
-  { XL9555_PIN_MODEM_PWR,    "modem_pwr",    false },
+  { XL9555_PIN_MODEM_PWR,    "modem_pwr",    false, NULL, true },
   { XL9555_PIN_LORA_EN,      "lora_en",      LORA_BOOT_LEVEL,
     tdeckmax_lora_rail },
   { XL9555_PIN_GPS_EN,       "gps_en",       GPS_BOOT_LEVEL,
-    tdeckmax_gps_rail },
+    tdeckmax_gps_rail, true },
   { XL9555_PIN_IMU_1V8_EN,   "imu_en",       true },
   { XL9555_PIN_LORA_ANT,     "lora_ant",     true },   /* Internal antenna */
   { XL9555_PIN_MOTOR_EN,     "motor_en",     true },
-  { XL9555_PIN_AMP_EN,       "amp_en",       false },
+  { XL9555_PIN_AMP_EN,       "amp_en",       false, NULL, true },
   { XL9555_PIN_TOUCH_RST,    "touch_rst",    true },   /* Active low */
   { XL9555_PIN_MODEM_PWRKEY, "modem_pwrkey", false },
   { XL9555_PIN_KEY_RST,      "key_rst",      true },   /* Active low */
@@ -148,7 +160,11 @@ static const struct gpio_operations_s g_rail_ops =
   .go_setpintype = tdeckmax_rail_setpintype,
 };
 
-static struct xl9555_rail_s g_rails[2];
+static struct xl9555_rail_s g_rails[4];
+#endif
+
+#ifndef CONFIG_DEV_GPIO
+static struct xl9555_rail_s g_rail;   /* Scratch for the boot levels */
 #endif
 
 /****************************************************************************
@@ -203,6 +219,39 @@ static void tdeckmax_gps_rail(bool on)
 #endif
 }
 
+/****************************************************************************
+ * Name: tdeckmax_rail_changed
+ *
+ * Description:
+ *   A rail has been switched: look after its device's pins, and hold the
+ *   chip awake, or let it sleep, as the device needs.
+ *
+ ****************************************************************************/
+
+static void tdeckmax_rail_changed(FAR struct xl9555_rail_s *rail, bool on)
+{
+  if (rail->pin->powered != NULL)
+    {
+      rail->pin->powered(on);
+    }
+
+#ifdef CONFIG_ESP32S3_AUTO_SLEEP
+  if (rail->pin->awake && on != rail->held)
+    {
+      if (on)
+        {
+          esp32s3_sleep_hold();
+        }
+      else
+        {
+          esp32s3_sleep_release();
+        }
+
+      rail->held = on;
+    }
+#endif
+}
+
 #ifdef CONFIG_DEV_GPIO
 
 /****************************************************************************
@@ -228,7 +277,7 @@ static int tdeckmax_rail_write(FAR struct gpio_dev_s *dev, bool value)
   ret = IOEXP_WRITEPIN(g_xl9555, rail->pin->pin, value);
   if (ret >= 0)
     {
-      rail->pin->powered(value);
+      tdeckmax_rail_changed(rail, value);
     }
 
   return ret;
@@ -317,21 +366,23 @@ int tdeckmax_xl9555_initialize(void)
           return ret;
         }
 
-      if (p->powered != NULL)
+      if (p->powered != NULL || p->awake)
         {
           /* The line's first level has already been driven; bring the
-           * device's pins in line with it.
+           * device's pins, and the chip's sleep, in line with it.
            */
-
-          p->powered(p->initial);
 
 #ifdef CONFIG_DEV_GPIO
           DEBUGASSERT(nrails < sizeof(g_rails) / sizeof(g_rails[0]));
           g_rails[nrails].gpio.gp_pintype = GPIO_OUTPUT_PIN;
           g_rails[nrails].gpio.gp_ops     = &g_rail_ops;
           g_rails[nrails].pin             = p;
+          tdeckmax_rail_changed(&g_rails[nrails], p->initial);
           ret = gpio_pin_register_byname(&g_rails[nrails++].gpio, p->name);
 #else
+          g_rail.pin  = p;
+          g_rail.held = false;
+          tdeckmax_rail_changed(&g_rail, p->initial);
           ret = OK;
 #endif
         }

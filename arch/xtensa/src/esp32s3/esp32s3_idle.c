@@ -38,6 +38,10 @@
 #  include "esp_private/pm_impl.h"
 #endif
 
+#ifdef CONFIG_ESP32S3_AUTO_SLEEP
+#  include "esp32s3_sleep.h"
+#endif
+
 /****************************************************************************
  * Pre-processor Definitions
  ****************************************************************************/
@@ -252,7 +256,14 @@ void up_idle(void)
       esp_pm_impl_idle_hook();
 #    endif
 
-      __asm__ __volatile__ ("waiti 0");
+#    ifdef CONFIG_ESP32S3_AUTO_SLEEP
+      /* Sleep instead, if nothing is due for a while */
+
+      if (!esp32s3_sleep_idle())
+#    endif
+        {
+          __asm__ __volatile__ ("waiti 0");
+        }
 #  endif
 
       /* Perform IDLE mode power management */

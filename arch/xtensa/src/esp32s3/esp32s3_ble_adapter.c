@@ -77,6 +77,7 @@
 #include "soc/clk_tree_defs.h"
 
 #include "esp32s3_ble_adapter.h"
+#include "esp32s3_systemreset.h"
 
 /****************************************************************************
  * Pre-processor Definitions
@@ -389,6 +390,7 @@ static void IRAM_ATTR btdm_mac_bb_power_up_cb(void);
 static void btdm_controller_mem_init(void);
 static void bt_controller_deinit_internal(void);
 static void btdm_low_power_mode_deinit(void);
+static void bt_shutdown(void);
 static bool async_wakeup_request(int event);
 static void async_wakeup_request_end(int event);
 
@@ -2688,6 +2690,31 @@ static void btdm_low_power_mode_deinit(void)
 }
 
 /****************************************************************************
+ * Name: bt_shutdown
+ *
+ * Description:
+ *   Shutdown handler, run before a software restart.  The RF circuits keep
+ *   running through a restart, so a controller left enabled would keep
+ *   drawing current in the restarted system, which knows nothing about it,
+ *   until the next power cycle.
+ *
+ * Input Parameters:
+ *   None
+ *
+ * Returned Value:
+ *   None
+ *
+ ****************************************************************************/
+
+static void bt_shutdown(void)
+{
+  if (g_btdm_controller_status == ESP_BT_CONTROLLER_STATUS_ENABLED)
+    {
+      esp32s3_bt_controller_disable();
+    }
+}
+
+/****************************************************************************
  * Name: async_wakeup_request
  *
  * Description:
@@ -3322,6 +3349,10 @@ int esp32s3_bt_controller_enable(esp_bt_mode_t mode)
   coex_pti_v2();
 
   g_btdm_controller_status = ESP_BT_CONTROLLER_STATUS_ENABLED;
+
+  /* Switch the controller off before a software restart, as ESP-IDF does */
+
+  esp32s3_register_shutdown_handler(bt_shutdown);
 
   return ret;
 

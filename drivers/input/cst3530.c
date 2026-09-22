@@ -448,6 +448,12 @@ static void cst3530_worker(FAR void *arg)
     }
 
 out:
+
+  /* The interrupt may be level triggered: it was masked when this report
+   * was queued, and can come back now that the report has been read.
+   */
+
+  priv->config->enable(priv->config, true);
   nxmutex_unlock(&priv->lock);
 }
 
@@ -459,6 +465,11 @@ static int cst3530_interrupt(int irq, FAR void *context, FAR void *arg)
 {
   FAR struct cst3530_dev_s *priv = arg;
 
+  /* Mask the interrupt until the worker has read the report, in case it is
+   * level triggered: the line may stay low until then.
+   */
+
+  priv->config->enable(priv->config, false);
   work_queue(HPWORK, &priv->work, cst3530_worker, priv, 0);
   return OK;
 }
