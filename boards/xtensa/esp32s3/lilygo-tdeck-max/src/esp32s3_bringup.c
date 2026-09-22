@@ -183,6 +183,16 @@ int esp32s3_bringup(void)
     }
 #endif
 
+#if defined(CONFIG_AUDIO_ES8311) && defined(CONFIG_ESPRESSIF_I2S0)
+  /* Register the ES8311 codec (/dev/audio/pcm0, /dev/audio/pcm_in0) */
+
+  ret = tdeckmax_audio_initialize();
+  if (ret < 0)
+    {
+      syslog(LOG_ERR, "ERROR: Failed to initialize audio: %d\n", ret);
+    }
+#endif
+
 #ifdef CONFIG_MMCSD_SPI
   /* Register /dev/mmcsd0 for the microSD slot */
 

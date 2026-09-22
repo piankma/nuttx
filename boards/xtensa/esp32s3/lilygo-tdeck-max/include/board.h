@@ -125,8 +125,8 @@
 #define BOARD_I2S_MCLK          38
 #define BOARD_I2S_BCLK          39
 #define BOARD_I2S_WS            18
-#define BOARD_I2S_DOUT          17    /* ESP32-S3 DOUT -> ES8311 DSDIN */
-#define BOARD_I2S_DIN           40    /* ES8311 ASDOUT -> ESP32-S3 DIN */
+#define BOARD_I2S_DOUT          40    /* To the codec's DSDIN */
+#define BOARD_I2S_DIN           17    /* From the codec's ASDOUT */
 
 /* XL9555 I/O expander (PCA9555 compatible, address 0x20, INT not wired).
  * Pin numbers follow the PCA9555 driver: 0-7 are P00-P07, 8-15 are P10-P17.

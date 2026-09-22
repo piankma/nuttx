@@ -681,14 +681,9 @@ static int es8311_setsamplerate(FAR struct es8311_dev_s *priv)
   int coeff_index;
   int ret;
 
-  priv->mclk = I2S_GETMCLKFREQUENCY(priv->i2s);
-  coeff_index = es8311_getcoeff(priv, priv->samprate);
-
-  if (coeff_index < 0)
-    {
-      auderr("Failed to set sample rate: %d\n", -EINVAL);
-      return -EINVAL;
-    }
+  /* Set the I2S rate first: MCLK follows it, and the codec's clock
+   * dividers depend on both
+   */
 
   ret = I2S_RXSAMPLERATE(priv->i2s, priv->samprate);
   if (ret < 0)
@@ -702,6 +697,16 @@ static int es8311_setsamplerate(FAR struct es8311_dev_s *priv)
     {
       auderr("I2S_TXSAMPLERATE failed.\n");
       return ret;
+    }
+
+  priv->mclk = I2S_GETMCLKFREQUENCY(priv->i2s);
+  coeff_index = es8311_getcoeff(priv, priv->samprate);
+
+  if (coeff_index < 0)
+    {
+      auderr("No clock setting for MCLK %" PRIu32 " Hz at %" PRIu32 " Hz\n",
+             priv->mclk, priv->samprate);
+      return -EINVAL;
     }
 
   ret = 0;
@@ -824,6 +829,12 @@ static int es8311_getcaps(FAR struct audio_lowerhalf_s *dev, int type,
 
         if (caps->ac_subtype == AUDIO_TYPE_QUERY)
           {
+              /* The input formats we can decode / accept */
+
+#ifdef CONFIG_AUDIO_FORMAT_PCM
+              caps->ac_format.hw |= (1 << (AUDIO_FMT_PCM - 1));
+#endif
+
               /* The types of audio units we implement */
 
               caps->ac_controls.b[0] = AUDIO_TYPE_INPUT |
@@ -1042,13 +1053,37 @@ static int es8311_configure(FAR struct audio_lowerhalf_s *dev,
         priv->samprate  = caps->ac_controls.hw[0];
         priv->bpsamp    = caps->ac_controls.b[2];
 
-        ret = es8311_setsamplerate(priv) == -ENOTTY ? OK : ret;
+        /* Either may be unsupported (-ENOTTY), which is not an error */
+
+        ret = es8311_setsamplerate(priv);
+        if (ret == -ENOTTY)
+          {
+            ret = OK;
+          }
+
         if (ret < 0)
           {
             break;
           }
 
-        ret = es8311_setbitspersample(priv) == -ENOTTY ? OK : ret;
+        ret = es8311_setbitspersample(priv);
+        if (ret == -ENOTTY)
+          {
+            ret = OK;
+          }
+
+        if (ret < 0)
+          {
+            break;
+          }
+
+        /* Tell the I2S how many slots the stream has */
+
+        ret = I2S_TXCHANNELS(priv->i2s, caps->ac_channels);
+        if (ret == -ENOTTY)
+          {
+            ret = OK;
+          }
       }
       break;
 
@@ -1089,13 +1124,40 @@ static int es8311_configure(FAR struct audio_lowerhalf_s *dev,
         priv->samprate  = caps->ac_controls.hw[0];
         priv->bpsamp    = caps->ac_controls.b[2];
 
-        ret = es8311_setsamplerate(priv) == -ENOTTY ? OK : ret;
-        if (ret != OK)
+        /* Either may be unsupported (-ENOTTY), which is not an error */
+
+        ret = es8311_setsamplerate(priv);
+        if (ret == -ENOTTY)
+          {
+            ret = OK;
+          }
+
+        if (ret < 0)
           {
             break;
           }
 
-        ret = es8311_setbitspersample(priv) == -ENOTTY ? OK : ret;
+        ret = es8311_setbitspersample(priv);
+        if (ret == -ENOTTY)
+          {
+            ret = OK;
+          }
+
+        if (ret < 0)
+          {
+            break;
+          }
+
+        /* Tell the I2S how many slots the stream has: a mono stream is the
+         * left one, the ADC (the right one carries the ADC too, or the DAC
+         * as an echo reference, see ES8311_GPIO_REG44)
+         */
+
+        ret = I2S_RXCHANNELS(priv->i2s, caps->ac_channels);
+        if (ret == -ENOTTY)
+          {
+            ret = OK;
+          }
       }
       break;
 

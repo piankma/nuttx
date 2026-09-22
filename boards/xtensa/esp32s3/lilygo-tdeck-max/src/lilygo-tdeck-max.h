@@ -202,6 +202,23 @@ int tdeckmax_imu_initialize(void);
 #endif
 
 /****************************************************************************
+ * Name: tdeckmax_audio_initialize
+ *
+ * Description:
+ *   Register the ES8311 codec: playback as /dev/audio/pcm0 (WAV files
+ *   through the PCM decoder), recording as /dev/audio/pcm_in0.  The speaker
+ *   amplifier is on while the playback device is reserved.
+ *
+ * Returned Value:
+ *   Zero (OK) on success; a negated errno value on failure.
+ *
+ ****************************************************************************/
+
+#if defined(CONFIG_AUDIO_ES8311) && defined(CONFIG_ESPRESSIF_I2S0)
+int tdeckmax_audio_initialize(void);
+#endif
+
+/****************************************************************************
  * Name: tdeckmax_keyboard_initialize
  *
  * Description:

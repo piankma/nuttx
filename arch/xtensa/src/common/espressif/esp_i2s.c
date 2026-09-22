@@ -38,6 +38,7 @@
 
 #include <nuttx/irq.h>
 #include <nuttx/arch.h>
+#include <nuttx/kmalloc.h>
 #include <nuttx/cache.h>
 #include <nuttx/spinlock.h>
 #include <arch/irq.h>
@@ -771,6 +772,7 @@ static void i2s_buf_free(struct esp_i2s_s *priv,
                          struct esp_buffer_s *bfcontainer)
 {
   irqstate_t flags;
+  uint8_t *buf = bfcontainer->buf;
 
   /* Put the buffer container back on the free list (circbuf) */
 
@@ -783,6 +785,13 @@ static void i2s_buf_free(struct esp_i2s_s *priv,
   priv->bf_freelist = bfcontainer;
 
   spin_unlock_irqrestore(&priv->slock, flags);
+
+  /* Release the internal buffer the DMA used, if any */
+
+  if (buf != NULL)
+    {
+      kmm_free(buf);
+    }
 
   /* Wake up any threads waiting for a buffer container */
 
@@ -1009,6 +1018,25 @@ static int i2s_rxdma_start(struct esp_i2s_s *priv)
 
   sq_addlast((sq_entry_t *)bfcontainer, &priv->rx.act);
 
+#ifdef I2S_HAVE_TX
+  /* In full-duplex master mode the receiver takes BCLK and WS from the
+   * transmitter (i2s_ll_share_bck_ws), whose clocks are also the ones on
+   * the pins.  The transmitter stops them whenever its FIFO is empty
+   * (TX_STOP_EN), so keep it clocking while receiving, restarting it if it
+   * has nothing to send.  AUDIOIOC_STOP restores TX_STOP_EN.
+   */
+
+  if (priv->config->role == I2S_ROLE_MASTER && priv->config->tx_en)
+    {
+      modifyreg32(I2S_TX_CONF_REG(priv->config->port), I2S_TX_STOP_EN, 0);
+      if (sq_empty(&priv->tx.act))
+        {
+          i2s_hal_tx_stop(priv->config->ctx);
+          i2s_hal_tx_start(priv->config->ctx);
+        }
+    }
+#endif
+
   /* Start RX — this starts BCLK/WS clocks (master mode) */
 
   modifyreg32(I2S_RX_CONF_REG(priv->config->port), 0, I2S_RX_START);
@@ -1077,7 +1105,11 @@ static IRAM_ATTR int i2s_txdma_setup(struct esp_i2s_s *priv,
    * carried from the last upper half audio buffer.
    */
 
-  bfcontainer->buf = calloc(bfcontainer->nbytes, 1);
+  /* The DMA only reaches internal RAM here: the audio buffers may be in
+   * PSRAM (the user heap, with a separate kernel heap).
+   */
+
+  bfcontainer->buf = kmm_zalloc(bfcontainer->nbytes);
   if (bfcontainer->buf == NULL)
     {
       i2serr("Failed to allocate the DMA internal buffer "
@@ -1207,19 +1239,32 @@ static int i2s_rxdma_setup(struct esp_i2s_s *priv,
 
   inlink = bfcontainer->dma_link;
 
+  /* The DMA fills an internal buffer, copied to the audio buffer when the
+   * transfer completes: the audio buffer may be in PSRAM (the user heap,
+   * with a separate kernel heap), which the DMA does not reach here.
+   */
+
+  bfcontainer->buf = kmm_malloc(bfcontainer->nbytes);
+  if (bfcontainer->buf == NULL)
+    {
+      i2serr("Failed to allocate the DMA internal buffer "
+             "[%" PRIu32 " bytes]", bfcontainer->nbytes);
+      return -ENOMEM;
+    }
+
   /* Configure DMA stream */
 
 #ifdef CONFIG_ARCH_CHIP_ESP32S3
   bytes_queued = esp_dma_setup((struct esp_dmadesc_s *)inlink,
                                I2S_DMADESC_NUM,
-                               (uint8_t *) bfcontainer->apb->samp,
+                               bfcontainer->buf,
                                bfcontainer->nbytes,
                                false,
                                priv->dma_channel);
 #else
   bytes_queued = esp_dma_setup((struct esp_dmadesc_s *)inlink,
                                I2S_DMADESC_NUM,
-                               (uint8_t *) bfcontainer->apb->samp,
+                               bfcontainer->buf,
                                bfcontainer->nbytes);
 #endif
 
@@ -1518,11 +1563,9 @@ static void i2s_tx_worker(void *arg)
       bfcontainer->callback(&priv->dev, bfcontainer->apb,
                             bfcontainer->arg, bfcontainer->result);
 
-      /* Release the internal buffer used by the DMA outlink */
-
-      free(bfcontainer->buf);
-
-      /* And release the buffer container */
+      /* And release the buffer container, and with it the internal buffer
+       * used by the DMA outlink
+       */
 
       i2s_buf_free(priv, bfcontainer);
     }
@@ -1609,6 +1652,16 @@ static void i2s_rx_worker(void *arg)
             {
               bfcontainer->apb->nbytes += dmadesc_ctrl->dw0.length;
             }
+
+          /* Hand the data over from the DMA's internal buffer */
+
+          if (bfcontainer->apb->nbytes > bfcontainer->apb->nmaxbytes)
+            {
+              bfcontainer->apb->nbytes = bfcontainer->apb->nmaxbytes;
+            }
+
+          memcpy(bfcontainer->apb->samp, bfcontainer->buf,
+                 bfcontainer->apb->nbytes);
 
           /* Perform the RX transfer done callback */
 
@@ -2673,6 +2726,19 @@ static int i2s_txchannels(struct i2s_dev_s *dev, uint8_t channels)
       i2s_ll_tx_enable_mono_mode(priv->config->ctx->dev,
                                  is_mono);
 
+#ifdef CONFIG_ARCH_CHIP_ESP32S3
+      /* In mono mode only one slot may be active, as in ESP-IDF: the left
+       * one, with the right one sending the same data (tx_chan_equal)
+       */
+
+      if (priv->config->audio_std_mode <= I2S_STD_PCM)
+        {
+          i2s_ll_tx_select_std_slot(priv->config->ctx->dev,
+                                    is_mono ? I2S_STD_SLOT_LEFT :
+                                              I2S_STD_SLOT_BOTH);
+        }
+#endif
+
       /* Set I2S_TX_UPDATE bit to update the configs.
        * This bit is automatically cleared.
        */
@@ -2738,6 +2804,20 @@ static int i2s_rxchannels(struct i2s_dev_s *dev, uint8_t channels)
 
       i2s_ll_rx_enable_mono_mode(priv->config->ctx->dev,
                                  is_mono);
+
+#ifdef CONFIG_ARCH_CHIP_ESP32S3
+      /* In mono mode only one slot may be active, as in ESP-IDF: the left
+       * one.  With both active the receiver stores both, so a mono stream
+       * would get twice the samples, interleaved with the right slot's.
+       */
+
+      if (priv->config->audio_std_mode <= I2S_STD_PCM && channels <= 2)
+        {
+          i2s_ll_rx_select_std_slot(priv->config->ctx->dev,
+                                    is_mono ? I2S_STD_SLOT_LEFT :
+                                              I2S_STD_SLOT_BOTH);
+        }
+#endif
 
       i2s_rx_channel_start(priv);
 
@@ -3201,6 +3281,19 @@ static int i2s_ioctl(struct i2s_dev_s *dev, int cmd, unsigned long arg)
                 {
                   i2s_rx_channel_stop(priv);
                 }
+
+#if defined(CONFIG_ARCH_CHIP_ESP32S3) && defined(I2S_HAVE_TX)
+              /* Let an idle transmitter stop its clocks again (see
+               * i2s_rxdma_start)
+               */
+
+              if (priv->config->role == I2S_ROLE_MASTER &&
+                  priv->config->tx_en)
+                {
+                  modifyreg32(I2S_TX_CONF_REG(priv->config->port), 0,
+                              I2S_TX_STOP_EN);
+                }
+#endif
 
               i2sinfo("AUDIOIOC_STOP: draining act=%d pend=%d\n",
                       !sq_empty(&priv->rx.act),
