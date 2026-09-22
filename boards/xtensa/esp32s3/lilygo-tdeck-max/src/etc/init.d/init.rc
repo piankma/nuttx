@@ -50,6 +50,11 @@ service msgd msgd
    restart_period 1000
 #endif
 
+#ifdef CONFIG_PNUT_MESHD
+service meshd meshd
+   restart_period 1000
+#endif
+
 #ifdef CONFIG_SYSTEM_NSH
 service console sh
    console
@@ -82,6 +87,9 @@ on init
 #endif
 #ifdef CONFIG_PNUT_MSGD
    start msgd
+#endif
+#ifdef CONFIG_PNUT_MESHD
+   start meshd
 #endif
 #ifdef CONFIG_SYSTEM_CDCACM
    exec -- sercon
