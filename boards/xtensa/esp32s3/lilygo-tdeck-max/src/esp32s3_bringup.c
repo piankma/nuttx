@@ -213,6 +213,20 @@ int esp32s3_bringup(void)
     {
       syslog(LOG_ERR, "ERROR: Failed to initialize microSD: %d\n", ret);
     }
+#  ifdef CONFIG_FS_FAT
+  else
+    {
+      /* Mount the card at /mnt/sd if there is one (pnut-os keeps messages
+       * there).  Without a card this fails quietly.
+       */
+
+      ret = nx_mount("/dev/mmcsd0", "/mnt/sd", "vfat", 0, NULL);
+      if (ret < 0)
+        {
+          syslog(LOG_INFO, "No microSD card mounted: %d\n", ret);
+        }
+    }
+#  endif
 #endif
 
 #ifdef CONFIG_INPUT_TCA8418

@@ -40,6 +40,11 @@ service modemd modemd
    restart_period 1000
 #endif
 
+#ifdef CONFIG_PNUT_MSGD
+service msgd msgd
+   restart_period 1000
+#endif
+
 #ifdef CONFIG_SYSTEM_NSH
 service console sh
    console
@@ -66,6 +71,9 @@ on init
 #endif
 #ifdef CONFIG_PNUT_MODEMD
    start modemd
+#endif
+#ifdef CONFIG_PNUT_MSGD
+   start msgd
 #endif
 #ifdef CONFIG_SYSTEM_CDCACM
    exec -- sercon
