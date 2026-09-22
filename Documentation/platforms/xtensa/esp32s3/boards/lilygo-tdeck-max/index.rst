@@ -95,6 +95,25 @@ To power the modem, switch on ``modem_pwr``, wait a moment, then pulse
 and waits for it to answer (see Modem).  The vendor notes that the battery
 must be connected to use the A7682E.
 
+Flash layout
+============
+
+The 16 MB flash is divided as follows (``full`` configuration):
+
+===================== ======= ================================================
+Range                 Size    Use
+===================== ======= ================================================
+0x000000 - 0x3FFFFF   4 MB    Firmware (it boots from address 0, ~1.2 MB)
+0x400000 - 0x7FFFFF   4 MB    Reserved for a second firmware slot (updates)
+0x800000 - 0xEFFFFF   7 MB    Not allocated
+0xF00000 - 0xFFFFFF   1 MB    ``/data``: littlefs for settings, keys, contacts
+===================== ======= ================================================
+
+``/data`` (``ESP32S3_SPIFLASH_LITTLEFS``, ``ESP32S3_STORAGE_MTD_OFFSET`` and
+``_SIZE``) is formatted on first use and survives reflashing, since
+``make flash`` only writes the firmware.  It sits in the last megabyte so
+that it stays put whatever boot scheme the firmware slots end up using.
+
 Pin map
 =======
 
