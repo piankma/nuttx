@@ -489,7 +489,8 @@ Audio
 The ES8311 codec on I2S0 is registered with the ``es8311`` driver
 (``AUDIO_ES8311``) as ``/dev/audio/pcm0`` for playback, through the PCM
 decoder so that WAV files play, and ``/dev/audio/pcm_in0`` for recording
-from the microphone, an analogue electret on the codec's MIC1 input.
+from the microphone, an analogue electret on the codec's MIC1 input, with
+30 dB of analog and 36 dB of digital gain (``ES8311_MIC_GAIN``).
 ``nxplayer`` and ``nxrecorder`` drive them, for example with raw 16-bit mono
 files at 16 kHz on the microSD card::
 
@@ -512,11 +513,19 @@ measurable.  The vendor's pin table and macros name the two data lines the
 other way round from the schematic: the ESP32-S3 sends on GPIO40 (the
 codec's DSDIN) and receives on GPIO17 (its ASDOUT).
 
+Writes to the microSD card put low-frequency noise on the microphone (at
+the rate nxrecorder writes buffers, a few hertz, and its harmonics).  The
+configuration raises the ADC's high-pass filter (``ES8311_ADC_HPF=4``),
+which takes it down by about 30 dB below 20 Hz while costing speech about
+3 dB at 200-500 Hz.  The vibration motor is picked up too.
+
 Getting there took fixes in the ESP32-S3 I2S driver (receive clocks in
-full-duplex master mode, mono slot selection, DMA buffers in internal RAM,
-a hang on buffers longer than one DMA descriptor) and in the ES8311 driver
-(capabilities, configuration, the channel count, empty final buffers and
-powering down).
+full-duplex master mode, mono slot selection, a receiver that keeps
+running across buffers instead of restarting for each, the end-of-buffer
+count in mono, DMA buffers in internal RAM, a hang on buffers longer than
+one DMA descriptor) and in the ES8311 driver (capabilities,
+configuration, the channel count, empty final buffers, powering down, and
+options for the microphone gain and the high-pass filter).
 
 LoRa
 ====
@@ -769,9 +778,10 @@ Verified on hardware (2026-09-20/21):
 * IMU: accelerometer (about 1 g at rest) and gyroscope samples through uORB
   at 50 and 100 Hz, on USB and on battery, after the firmware upload.
 * Audio: a 500 Hz tone played with ``nxplayer`` is heard from the speaker;
-  ``nxrecorder`` records the microphone (16 kHz mono), also back to back
-  with playback; idle current on battery is the same with and without the
-  audio driver.
+  a voice recorded with ``nxrecorder`` (16 kHz mono) and played back is
+  clear, with no clicks or lost samples (about -22 dBFS speech); recording
+  and playback work back to back; idle current on battery is the same with
+  and without the audio driver.
 * LoRa: packets transmitted through ``/dev/lora0``, with send times matching
   the time on air; DIO1 wakes the chip from light sleep.
 * Modem: data from the modem (unsolicited ``+CPIN`` lines) is received on
