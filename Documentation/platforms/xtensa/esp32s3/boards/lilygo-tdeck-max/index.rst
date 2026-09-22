@@ -112,7 +112,7 @@ GNSS UART1              TX 16, RX 2, PPS 1
 Modem UART2             TX 10, RX 11, RI 7, DTR 8
 Touch INT, keyboard INT 12, 15 (keyboard backlight 42)
 IMU INT                 21
-ES8311 I2S              MCLK 38, BCLK 39, WS 18, DOUT 17, DIN 40
+ES8311 I2S              MCLK 38, BCLK 39, WS 18, DOUT 40, DIN 17
 ======================= =========================================
 
 The e-paper, the SD card and the SX1262 share SPI2.  Their chip selects are
@@ -483,6 +483,41 @@ The accelerometer (m/s², 8 g range) and gyroscope (rad/s, 2000 deg/s) are
 the firmware's passthrough sensors, 50 Hz by default.  Its host interrupt
 on GPIO21 is level triggered and wakes the chip from light sleep.
 
+Audio
+=====
+
+The ES8311 codec on I2S0 is registered with the ``es8311`` driver
+(``AUDIO_ES8311``) as ``/dev/audio/pcm0`` for playback, through the PCM
+decoder so that WAV files play, and ``/dev/audio/pcm_in0`` for recording
+from the microphone, an analogue electret on the codec's MIC1 input.
+``nxplayer`` and ``nxrecorder`` drive them, for example with raw 16-bit mono
+files at 16 kHz on the microSD card::
+
+    nsh> nxrecorder
+    nxrecorder> device /dev/audio/pcm_in0
+    nxrecorder> recordraw /mnt/sd/rec.raw 1 16 16000
+    nxrecorder> stop
+    nxrecorder> q
+    nsh> nxplayer
+    nxplayer> device /dev/audio/pcm0
+    nxplayer> volume 50
+    nxplayer> playraw /mnt/sd/rec.raw 1 16 16000
+    nxplayer> q
+
+The speaker amplifier (``amp_en``) is on while the playback device is
+reserved, which also keeps the chip awake; recording holds the chip out of
+light sleep itself, because I2S stops in light sleep.  Between streams the
+codec's analog side is powered down, so an idle codec costs nothing
+measurable.  The vendor's pin table and macros name the two data lines the
+other way round from the schematic: the ESP32-S3 sends on GPIO40 (the
+codec's DSDIN) and receives on GPIO17 (its ASDOUT).
+
+Getting there took fixes in the ESP32-S3 I2S driver (receive clocks in
+full-duplex master mode, mono slot selection, DMA buffers in internal RAM,
+a hang on buffers longer than one DMA descriptor) and in the ES8311 driver
+(capabilities, configuration, the channel count, empty final buffers and
+powering down).
+
 LoRa
 ====
 
@@ -716,7 +751,8 @@ Verified on hardware (2026-09-20/21):
   toggled with the expected effect; ``imu_en``, ``motor_en``, ``touch_rst``
   and ``key_rst`` are in their default state (their I2C devices answer).
   ``lora_ant`` was toggled and the real pin level (XL9555 input register)
-  followed it; ``amp_en`` and ``audio_sel`` were not exercised.
+  followed it; ``amp_en`` switches the speaker amplifier (see Audio);
+  ``audio_sel`` was not exercised.
 * I2C scan finds the ES8311 (0x18), touch (0x1a), XL9555 (0x20), BHI260AP
   (0x28), TCA8418 (0x34), BQ27220 (0x55), DRV2605 (0x5a) and SY6970 (0x6a).
 * microSD: a FAT32 card mounts; 8 KB of unique data written, unmounted,
@@ -732,6 +768,10 @@ Verified on hardware (2026-09-20/21):
   messages through the GNSS upper half.
 * IMU: accelerometer (about 1 g at rest) and gyroscope samples through uORB
   at 50 and 100 Hz, on USB and on battery, after the firmware upload.
+* Audio: a 500 Hz tone played with ``nxplayer`` is heard from the speaker;
+  ``nxrecorder`` records the microphone (16 kHz mono), also back to back
+  with playback; idle current on battery is the same with and without the
+  audio driver.
 * LoRa: packets transmitted through ``/dev/lora0``, with send times matching
   the time on air; DIO1 wakes the chip from light sleep.
 * Modem: data from the modem (unsolicited ``+CPIN`` lines) is received on
@@ -793,6 +833,5 @@ Not verified:
 * The debug session through the VS Code UI (only OpenOCD and GDB were driven).
 * Charging from a mostly empty cell, and how closely the state of charge
   follows the cell over a full discharge.
-* Touch events from the touch controller.
 
-Not implemented yet: drivers for the IMU and the ES8311 audio path.
+Not implemented yet: the modem's audio path through ``audio_sel``.
