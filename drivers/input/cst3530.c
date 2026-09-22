@@ -47,7 +47,9 @@
  *   3      X bits 11-8 (low nibble), Y bits 11-8 (high nibble)
  *   4      touch id (low nibble), non-zero while pressed (high nibble)
  *
- * Writing 0xD00002AB acknowledges the report.
+ * A touch key's record carries the key's id in byte 4, low nibble, and its
+ * state in the high nibble, like a touch.  Writing 0xD00002AB acknowledges
+ * the report.
  ****************************************************************************/
 
 /****************************************************************************
@@ -62,12 +64,15 @@
 #include <errno.h>
 
 #include <nuttx/debug.h>
+#include <nuttx/nuttx.h>
 #include <nuttx/kmalloc.h>
 #include <nuttx/mutex.h>
 #include <nuttx/sched.h>
 #include <nuttx/wqueue.h>
 #include <nuttx/i2c/i2c_master.h>
 #include <nuttx/input/touchscreen.h>
+#include <nuttx/input/keyboard.h>
+#include <nuttx/input/kbd_codec.h>
 #include <nuttx/input/cst3530.h>
 
 #ifdef CONFIG_INPUT_CST3530
@@ -114,9 +119,12 @@
 #define CST3530_WAKE_US        1000        /* Between the two wake commands */
 #define CST3530_RETRY_US       10000       /* Between info attempts */
 
-/* Touch samples are buffered for this many reads */
+/* Touch samples are buffered for this many reads, key events for this
+ * many events
+ */
 
 #define CST3530_BUFFERS        8
+#define CST3530_KEYBUFFERS     8
 
 /****************************************************************************
  * Private Types
@@ -126,6 +134,10 @@ struct cst3530_dev_s
 {
   struct touch_lowerhalf_s lower;  /* Must be first */
 
+  /* The touch keys, if any */
+
+  struct keyboard_lowerhalf_s keys;
+
   FAR struct i2c_master_s *i2c;
   FAR const struct cst3530_config_s *config;
   struct i2c_config_s i2cconfig;
@@ -134,6 +146,7 @@ struct cst3530_dev_s
   struct work_s work;              /* Reads a report */
   int nopen;                       /* Open files; awake while non-zero */
   uint16_t downmap;                /* Touch ids currently down */
+  uint16_t keymap;                 /* Touch keys currently down */
   int16_t lastx[CST3530_MAXID];    /* Last position of each id */
   int16_t lasty[CST3530_MAXID];
 
@@ -155,8 +168,12 @@ static int cst3530_report(FAR struct cst3530_dev_s *priv,
 static void cst3530_worker(FAR void *arg);
 static int cst3530_interrupt(int irq, FAR void *context, FAR void *arg);
 
+static int cst3530_get(FAR struct cst3530_dev_s *priv);
+static void cst3530_put(FAR struct cst3530_dev_s *priv);
 static int cst3530_open(FAR struct touch_lowerhalf_s *lower);
 static int cst3530_close(FAR struct touch_lowerhalf_s *lower);
+static int cst3530_keys_open(FAR struct keyboard_lowerhalf_s *lower);
+static int cst3530_keys_close(FAR struct keyboard_lowerhalf_s *lower);
 
 /****************************************************************************
  * Private Functions
@@ -344,7 +361,9 @@ static void cst3530_worker(FAR void *arg)
                  CST3530_MAXRECORDS * CST3530_RECORD_SIZE];
   uint64_t timestamp;
   uint16_t downmap = 0;
+  uint16_t keymap = 0;
   uint16_t released;
+  uint16_t changed;
   int npoints = 0;
   int nkeys;
   int ntouch;
@@ -381,12 +400,38 @@ static void cst3530_worker(FAR void *arg)
   nkeys  = buffer[3] >> 4;
   ntouch = buffer[3] & 0x0f;
 
-  if (nkeys > 0)
+  /* Keys: a press for every key that went down, a release for every key
+   * that is up again or no longer reported
+   */
+
+  for (i = 0; i < nkeys; i++)
     {
-      iinfo("Touch key %d, state %d\n",
-            buffer[CST3530_HEADER_SIZE + 4] & 0x0f,
-            buffer[CST3530_HEADER_SIZE + 4] >> 4);
+      FAR const uint8_t *raw =
+        &buffer[CST3530_HEADER_SIZE + i * CST3530_RECORD_SIZE];
+
+      iinfo("Touch key %d, state %d\n", raw[4] & 0x0f, raw[4] >> 4);
+      if ((raw[4] >> 4) != 0)
+        {
+          keymap |= 1 << (raw[4] & 0x0f);
+        }
     }
+
+  changed = keymap ^ priv->keymap;
+  for (i = 0; changed != 0 && i < CST3530_MAXID; i++)
+    {
+      if ((changed & (1 << i)) != 0)
+        {
+          changed &= ~(1 << i);
+          if (priv->config->keypath != NULL && i < priv->config->nkeys)
+            {
+              keyboard_event(&priv->keys, priv->config->keycodes[i],
+                             (keymap & (1 << i)) != 0 ?
+                             KEYBOARD_SPECPRESS : KEYBOARD_SPECREL);
+            }
+        }
+    }
+
+  priv->keymap = keymap;
 
   timestamp = touch_get_time();
   memset(sample, 0, sizeof(priv->sample));
@@ -475,16 +520,15 @@ static int cst3530_interrupt(int irq, FAR void *context, FAR void *arg)
 }
 
 /****************************************************************************
- * Name: cst3530_open
+ * Name: cst3530_get
  *
  * Description:
- *   Wake the controller for the first file opened.
+ *   Wake the controller for the first file opened, touch or keys.
  *
  ****************************************************************************/
 
-static int cst3530_open(FAR struct touch_lowerhalf_s *lower)
+static int cst3530_get(FAR struct cst3530_dev_s *priv)
 {
-  FAR struct cst3530_dev_s *priv = (FAR struct cst3530_dev_s *)lower;
   int ret = OK;
 
   nxmutex_lock(&priv->lock);
@@ -500,6 +544,7 @@ static int cst3530_open(FAR struct touch_lowerhalf_s *lower)
         }
 
       priv->downmap = 0;
+      priv->keymap  = 0;
       priv->config->enable(priv->config, true);
     }
 
@@ -511,17 +556,15 @@ out:
 }
 
 /****************************************************************************
- * Name: cst3530_close
+ * Name: cst3530_put
  *
  * Description:
  *   Put the controller in deep sleep when the last file is closed.
  *
  ****************************************************************************/
 
-static int cst3530_close(FAR struct touch_lowerhalf_s *lower)
+static void cst3530_put(FAR struct cst3530_dev_s *priv)
 {
-  FAR struct cst3530_dev_s *priv = (FAR struct cst3530_dev_s *)lower;
-
   nxmutex_lock(&priv->lock);
 
   if (priv->nopen > 0 && --priv->nopen == 0)
@@ -532,6 +575,37 @@ static int cst3530_close(FAR struct touch_lowerhalf_s *lower)
     }
 
   nxmutex_unlock(&priv->lock);
+}
+
+/****************************************************************************
+ * Name: cst3530_open / cst3530_close
+ ****************************************************************************/
+
+static int cst3530_open(FAR struct touch_lowerhalf_s *lower)
+{
+  return cst3530_get((FAR struct cst3530_dev_s *)lower);
+}
+
+static int cst3530_close(FAR struct touch_lowerhalf_s *lower)
+{
+  cst3530_put((FAR struct cst3530_dev_s *)lower);
+  return OK;
+}
+
+/****************************************************************************
+ * Name: cst3530_keys_open / cst3530_keys_close
+ ****************************************************************************/
+
+static int cst3530_keys_open(FAR struct keyboard_lowerhalf_s *lower)
+{
+  /* lower->priv belongs to the keyboard upper half */
+
+  return cst3530_get(container_of(lower, struct cst3530_dev_s, keys));
+}
+
+static int cst3530_keys_close(FAR struct keyboard_lowerhalf_s *lower)
+{
+  cst3530_put(container_of(lower, struct cst3530_dev_s, keys));
   return OK;
 }
 
@@ -637,6 +711,23 @@ int cst3530_register(FAR const char *devpath, FAR struct i2c_master_s *i2c,
     {
       ierr("ERROR: touch_register failed: %d\n", ret);
       goto errout;
+    }
+
+  if (config->keypath != NULL)
+    {
+      DEBUGASSERT(config->keycodes != NULL);
+
+      priv->keys.open  = cst3530_keys_open;
+      priv->keys.close = cst3530_keys_close;
+
+      ret = keyboard_register(&priv->keys, config->keypath,
+                              CST3530_KEYBUFFERS);
+      if (ret < 0)
+        {
+          ierr("ERROR: keyboard_register failed: %d\n", ret);
+          touch_unregister(&priv->lower, devpath);
+          goto errout;
+        }
     }
 
   return OK;

@@ -57,6 +57,17 @@ struct cst3530_config_s
   uint32_t frequency;  /* I2C frequency */
   uint8_t  flags;      /* TOUCH_FLAG_SWAPXY / MIRRORX / MIRRORY */
 
+  /* Touch keys, optional.  If keypath is not NULL, the keys are registered
+   * there as a keyboard device, and the key with id n is reported as the
+   * special key keycodes[n] (KEYCODE_*, reported with KEYBOARD_SPECPRESS
+   * and KEYBOARD_SPECREL) for n < nkeys.  The controller only reports while
+   * one of the devices is open.
+   */
+
+  FAR const char     *keypath;
+  FAR const uint32_t *keycodes;
+  uint8_t             nkeys;
+
   /* Attach isr to the interrupt line, active low: the controller pulls it
    * down for each new report.  It may be edge or level triggered; the
    * driver masks it while it reads a report.  The interrupt is left

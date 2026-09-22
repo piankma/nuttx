@@ -40,6 +40,7 @@
 #include <nuttx/i2c/i2c_master.h>
 #include <nuttx/ioexpander/ioexpander.h>
 #include <nuttx/input/cst3530.h>
+#include <nuttx/input/kbd_codec.h>
 
 #include <arch/board/board.h>
 
@@ -68,10 +69,20 @@ static void tdeckmax_touch_reset(FAR const struct cst3530_config_s *config,
  * Private Data
  ****************************************************************************/
 
+/* The controller's touch keys, by id */
+
+static const uint32_t g_touch_keycodes[] =
+{
+  KEYCODE_F1, KEYCODE_F2, KEYCODE_F3
+};
+
 static const struct cst3530_config_s g_cst3530_config =
 {
   .frequency = 400000,
   .flags     = 0,
+  .keypath   = "/dev/kbd1",
+  .keycodes  = g_touch_keycodes,
+  .nkeys     = sizeof(g_touch_keycodes) / sizeof(g_touch_keycodes[0]),
   .attach    = tdeckmax_touch_attach,
   .enable    = tdeckmax_touch_enable,
   .reset     = tdeckmax_touch_reset,

@@ -461,7 +461,9 @@ registers if the controller's info block carries the family's signature.
 The controller is put in deep sleep at boot and only woken, by a reset,
 while the device is open.  The vendor maps its coordinates
 straight onto the 240x320 panel, so no swapping or mirroring is configured.
-Touch keys reported by the controller are not passed on.
+The controller's three touch keys are registered as the keyboard device
+``/dev/kbd1``, reporting the special keys F1 to F3 from left to right while
+it or ``/dev/input0`` is open.
 
 Touches are reported: ``tc`` prints them on the device.
 
