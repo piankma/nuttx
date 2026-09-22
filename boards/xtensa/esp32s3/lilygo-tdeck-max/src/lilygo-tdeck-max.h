@@ -308,6 +308,22 @@ int tdeckmax_touch_initialize(void);
 #endif
 
 /****************************************************************************
+ * Name: board_spiflash_init
+ *
+ * Description:
+ *   Register the storage partition of the SPI flash and mount it at /data
+ *   (boards/xtensa/esp32s3/common).
+ *
+ * Returned Value:
+ *   Zero (OK) on success; a negated errno value on failure.
+ *
+ ****************************************************************************/
+
+#ifdef CONFIG_ESP32S3_SPIFLASH
+int board_spiflash_init(void);
+#endif
+
+/****************************************************************************
  * Name: tdeckmax_radios_initialize
  *
  * Description:

@@ -111,6 +111,18 @@ int esp32s3_bringup(void)
     }
 #endif
 
+#ifdef CONFIG_ESP32S3_SPIFLASH
+  /* Mount /data, the settings partition in the last megabyte of the flash
+   * (ESP32S3_STORAGE_MTD_OFFSET/SIZE).  It is formatted on first use.
+   */
+
+  ret = board_spiflash_init();
+  if (ret < 0)
+    {
+      syslog(LOG_ERR, "ERROR: Failed to mount /data: %d\n", ret);
+    }
+#endif
+
 #ifdef CONFIG_I2C_DRIVER
   /* Register /dev/i2c0 (shared bus: expander, touch, keyboard, IMU, ...) */
 
