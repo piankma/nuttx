@@ -1002,9 +1002,8 @@ static int i2s_rxdma_start(struct esp_i2s_s *priv)
       eof_samples = 4095;
     }
 
-  /* Full channel stop + start to reinitialize I2S RX and DMA.
-   * This is required because the I2S RX byte counter does not
-   * auto-reset after SUC_EOF — only RX_RESET clears it.
+  /* Starting the receiver: full channel stop + start to reinitialize I2S
+   * RX and DMA, which also clears the RX sample counter.
    * channel_start does: DMA reset → RX_RESET → FIFO_RESET →
    * rx_update (re-applies slot config) → enable IRQ + SUC_EOF.
    */
