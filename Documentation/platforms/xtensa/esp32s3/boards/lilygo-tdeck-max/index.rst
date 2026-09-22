@@ -558,6 +558,25 @@ arrived with a good CRC, at -34 dBm and 13 dB SNR, and decrypted to the text
 sent; a message built in MeshCore's format and sent from ``/dev/lora0``
 showed up on the watch.
 
+The antenna switch (``lora_ant``, XL9555 P04) selects the internal antenna
+when high, the default, and the external connector on the top edge when low.
+It sits between the module and both antennas, so it applies to transmission
+and reception alike.  Measured with the same watch 2-3 m away, alternating
+the switch between its packets (median RSSI of 6 packets each):
+
+================================ ============ ============
+Setting                          Antenna on   Antenna off
+================================ ============ ============
+``lora_ant`` low (external)      -29 dBm      -60 dBm
+``lora_ant`` high (internal)     -43 dBm      -28 dBm
+================================ ============ ============
+
+Taking the external antenna off costs its setting 31 dB, which identifies
+it.  An attached external antenna that is not selected detunes the internal
+one (15 dB worse), so select it whenever it is fitted::
+
+    nsh> gpio -o 0 /dev/lora_ant
+
 GNSS
 ====
 
@@ -779,11 +798,13 @@ Verified on hardware (2026-09-20/21):
   at 50 and 100 Hz, on USB and on battery, after the firmware upload.
 * Audio: a 500 Hz tone played with ``nxplayer`` is heard from the speaker;
   a voice recorded with ``nxrecorder`` (16 kHz mono) and played back is
-  clear, with no clicks or lost samples (about -22 dBFS speech); recording
-  and playback work back to back; idle current on battery is the same with
-  and without the audio driver.
+  clear, with no clicks or lost samples (about -22 dBFS speech); recordings
+  back to back, and a playback after a recording, work; idle current on
+  battery is the same with and without the audio driver.
 * LoRa: packets transmitted through ``/dev/lora0``, with send times matching
-  the time on air; DIO1 wakes the chip from light sleep.
+  the time on air; DIO1 wakes the chip from light sleep.  ``lora_ant``
+  switches between the internal antenna and the external connector (see
+  LoRa).
 * Modem: data from the modem (unsolicited ``+CPIN`` lines) is received on
   UART2.
 * JTAG: OpenOCD and GDB over the USB Serial/JTAG unit, with a breakpoint,
@@ -820,11 +841,11 @@ Verified on hardware (2026-09-20/21):
 
 Not verified:
 
-* The radio effect of ``lora_ant``.  A receive-strength comparison of the two
-  settings across 863-870 MHz found identical readings: the receiver is
-  limited by its own noise floor, so a passive measurement cannot tell the
-  antennas apart.  An 868 MHz signal source, or touching the external antenna
-  while watching the readings, is needed.
+* A recording after a playback in the same boot gets no data (0 bytes, or
+  about a second of a 3-4 s recording); after a reset recording works
+  again.  The receiver takes its clocks from the idle transmitter, which
+  ``i2s_rxdma_start`` restarts, and after a playback that restart does not
+  seem to bring them back.
 * A GNSS position fix: tried only indoors, from a cold start.
 * Transmission to the modem (no reply to ``AT`` was seen).
 * Recovery from repeated failed associations: after a few attempts against an
