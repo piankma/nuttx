@@ -1448,7 +1448,15 @@ static int es8311_processbegin(FAR struct es8311_dev_s *priv)
 
       if (ret < 0)
         {
+          /* Give the buffer back rather than lose it: counted in flight
+           * but never completed, it kept the worker, and so es8311_stop(),
+           * waiting forever.  I2S fails like this when it cannot allocate
+           * the internal buffer the DMA needs.
+           */
+
           auderr("I2S transfer failed: %d\n", ret);
+          apb->nbytes = 0;   /* Nothing was transferred */
+          es8311_processdone(priv->i2s, apb, priv, ret);
           break;
         }
     }

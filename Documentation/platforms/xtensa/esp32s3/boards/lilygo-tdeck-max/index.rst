@@ -519,13 +519,25 @@ configuration raises the ADC's high-pass filter (``ES8311_ADC_HPF=4``),
 which takes it down by about 30 dB below 20 Hz while costing speech about
 3 dB at 200-500 Hz.  The vibration motor is picked up too.
 
+Record to the microSD card, not to ``/tmp``.  Every transfer needs a DMA
+buffer in internal RAM, taken from the kernel heap (about 160 KB free in
+``full``), and ``/tmp`` is a tmpfs whose files come from the same heap
+(``FS_HEAPSIZE`` is 0): a 64 KB file there leaves about 90 KB, and a
+recording into ``/tmp`` runs out of it after a second or two.  When I2S
+cannot get its buffer the transfer fails and the audio buffer goes back
+empty, so the recording just stops growing and ``stop`` still works.  (The
+ES8311 driver used to lose such a buffer while still counting it in
+flight, and ``stop`` then waited for it forever.)
+
 Getting there took fixes in the ESP32-S3 I2S driver (receive clocks in
 full-duplex master mode, mono slot selection, a receiver that keeps
 running across buffers instead of restarting for each, the end-of-buffer
 count in mono, DMA buffers in internal RAM, a hang on buffers longer than
-one DMA descriptor) and in the ES8311 driver (capabilities,
-configuration, the channel count, empty final buffers, powering down, and
-options for the microphone gain and the high-pass filter).
+one DMA descriptor, error paths that kept a buffer reference or unlocked a
+mutex they did not hold) and in the ES8311 driver (capabilities,
+configuration, the channel count, empty final buffers, failed transfers,
+powering down, and options for the microphone gain and the high-pass
+filter).
 
 LoRa
 ====
@@ -798,9 +810,10 @@ Verified on hardware (2026-09-20/21):
   at 50 and 100 Hz, on USB and on battery, after the firmware upload.
 * Audio: a 500 Hz tone played with ``nxplayer`` is heard from the speaker;
   a voice recorded with ``nxrecorder`` (16 kHz mono) and played back is
-  clear, with no clicks or lost samples (about -22 dBFS speech); recordings
-  back to back, and a playback after a recording, work; idle current on
-  battery is the same with and without the audio driver.
+  clear, with no clicks or lost samples (about -22 dBFS speech); recording
+  and playback work back to back in either order; with the kernel heap
+  exhausted a recording stops short and ``stop`` still returns; idle current
+  on battery is the same with and without the audio driver.
 * LoRa: packets transmitted through ``/dev/lora0``, with send times matching
   the time on air; DIO1 wakes the chip from light sleep.  ``lora_ant``
   switches between the internal antenna and the external connector (see
@@ -841,11 +854,6 @@ Verified on hardware (2026-09-20/21):
 
 Not verified:
 
-* A recording after a playback in the same boot gets no data (0 bytes, or
-  about a second of a 3-4 s recording); after a reset recording works
-  again.  The receiver takes its clocks from the idle transmitter, which
-  ``i2s_rxdma_start`` restarts, and after a playback that restart does not
-  seem to bring them back.
 * A GNSS position fix: tried only indoors, from a cold start.
 * Transmission to the modem (no reply to ``AT`` was seen).
 * Recovery from repeated failed associations: after a few attempts against an

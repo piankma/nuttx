@@ -1222,7 +1222,7 @@ static IRAM_ATTR int i2s_txdma_setup(struct esp_i2s_s *priv,
       i2serr("Failed to enqueue I2S buffer "
              "(%" PRIu32 " bytes of %" PRIu32 ")\n",
              bytes_queued, bfcontainer->nbytes);
-      return -bytes_queued;
+      return -EFBIG;
     }
 
   flags = spin_lock_irqsave(&priv->slock);
@@ -1306,7 +1306,7 @@ static int i2s_rxdma_setup(struct esp_i2s_s *priv,
       i2serr("Failed to enqueue I2S buffer "
              "(%" PRIu32 " bytes of %" PRIu32 ")\n",
              bytes_queued, bfcontainer->nbytes);
-      return -bytes_queued;
+      return -EFBIG;
     }
 
   /* Writeback DMA descriptors from data cache to physical memory.
@@ -3124,7 +3124,7 @@ static int i2s_send(struct i2s_dev_s *dev, struct ap_buffer_s *apb,
 
       if (ret != OK)
         {
-          goto errout_with_buf;
+          goto errout_with_apb;
         }
 
       i2sinfo("Queued %d bytes into DMA buffers\n", apb->nbytes);
@@ -3135,8 +3135,11 @@ static int i2s_send(struct i2s_dev_s *dev, struct ap_buffer_s *apb,
 
       return OK;
 
-errout_with_buf:
+errout_with_apb:
+      apb_free(apb);
       nxmutex_unlock(&priv->lock);
+
+errout_with_buf:
       i2s_buf_free(priv, bfcontainer);
       return ret;
     }
@@ -3244,15 +3247,18 @@ static int i2s_receive(struct i2s_dev_s *dev, struct ap_buffer_s *apb,
 
       if (ret != OK)
         {
-          goto errout_with_buf;
+          goto errout_with_apb;
         }
 
       nxmutex_unlock(&priv->lock);
 
       return OK;
 
-errout_with_buf:
+errout_with_apb:
+      apb_free(apb);
       nxmutex_unlock(&priv->lock);
+
+errout_with_buf:
       i2s_buf_free(priv, bfcontainer);
       return ret;
     }
