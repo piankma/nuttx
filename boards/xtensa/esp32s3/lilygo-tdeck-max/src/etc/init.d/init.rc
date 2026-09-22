@@ -35,6 +35,11 @@ service cfgd cfgd
    restart_period 1000
 #endif
 
+#ifdef CONFIG_PNUT_MODEMD
+service modemd modemd
+   restart_period 1000
+#endif
+
 #ifdef CONFIG_SYSTEM_NSH
 service console sh
    console
@@ -58,6 +63,9 @@ service terminal nxterm
 on init
 #ifdef CONFIG_PNUT_CFGD
    start cfgd
+#endif
+#ifdef CONFIG_PNUT_MODEMD
+   start modemd
 #endif
 #ifdef CONFIG_SYSTEM_CDCACM
    exec -- sercon
