@@ -229,6 +229,21 @@ Bluetooth LE, with the ``fb``, ``pwm``, ``kbd`` and ``nxterm`` examples.
 This is the configuration to use on the device itself; ``nsh`` stays as the
 minimal one to fall back to when something needs to be bisected.
 
+At boot ``full`` also mounts the microSD card at ``/mnt/sd`` (when there is
+one), mounts the ``/data`` settings partition (see Flash layout), and keeps
+the system log in a 4 KB RAM buffer as well as on the console, so that
+``dmesg`` shows messages from before anyone attached.  The RAM log lives at
+``/dev/kmsg``: ``CONFIG_SYSLOG_DEVPATH`` defaulted to ``/dev/ttyS1``, the
+modem's UART, where the RAM log could not register and ``dmesg`` then waited
+on the modem forever.
+
+When the out-of-tree pnut-os system layer is built in (linked into the apps
+tree as ``apps/external``), ``init.rc`` starts its daemons before the shell
+and restarts one that exits: ``cfgd`` (settings), ``sysd`` (battery, clock,
+backlights), ``modemd`` (the modem), ``msgd`` (messages) and ``meshd`` (the
+LoRa mesh).  They own the hardware they drive; ``pnut`` is their
+command-line client.
+
 The panel is a GoodDisplay GDEQ031T10, a 3.1 inch 240x320 monochrome panel
 driven by a UC8253 controller, on the SPI2 bus it shares with the microSD
 slot and the SX1262.  The driver is ``drivers/lcd/uc8253.c``.
@@ -636,7 +651,9 @@ Modem
 =====
 
 The SIMCom A7682E (4G LTE Cat 1) is on UART2 at 115200 baud as
-``/dev/ttyS1``, and the ``modem`` example drives it::
+``/dev/ttyS1``.  In ``full`` the pnut-os daemon ``modemd`` owns it (see the
+full configuration); without it, the ``modem`` example
+(``EXAMPLES_MODEM``) drives it::
 
     nsh> modem on            # supply, PWRKEY, wait for the first answer
     nsh> modem info          # identity, SIM, signal, network
@@ -668,6 +685,11 @@ the microSD card share one combined holder (WL-SIM3IN2) and can both be
 fitted: the SIM contacts go only to the modem, the card to the ESP32-S3's
 SPI bus.  The modem has its own microphone; its speaker output is shared with the codec's through
 ``audio_sel``.
+
+With a SIM (Orange Polska): the SIM reports ready and the modem
+registers on LTE at -51 dBm, and the network's time sets the device clock
+(``AT+CTZU=1``, ``AT+CCLK?``).  The modem refuses caller ID (``AT+CLIP=1``)
+until the SIM has loaded, which it announces with ``PB DONE``.
 
 Verified without a SIM card: the modem answers, identifies itself
 (``A7682E``, firmware ``A7682M7_V1.11.1``, its IMEI), reports the strongest
