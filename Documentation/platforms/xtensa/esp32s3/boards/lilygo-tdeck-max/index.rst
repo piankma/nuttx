@@ -337,6 +337,11 @@ A few properties worth knowing:
 * Partial refreshes accumulate ghosting, so ``LCD_UC8253_FULL_EVERY``
   (16 by default) forces a full one periodically.  Set it to 0 to leave
   that entirely to the application.
+* An application can steer this at run time, through ``/dev/fb0``:
+  ``UC8253IOC_FULLREFRESH`` makes the next refresh a full one (the shell
+  does it on unlock) and ``UC8253IOC_SETFULLEVERY`` changes the interval
+  (Settings > Display > Full refresh).  Both are in
+  ``include/nuttx/lcd/uc8253.h``.
 * The controller does **not** keep its own "previous frame".  A partial
   refresh only moves pixels whose previous and current values differ, and
   the UC8253 leaves the previous buffer as it was after a refresh.  Every
@@ -840,16 +845,35 @@ what matters for the board:
   1 bpp, most significant bit first, a set bit white; LVGL's
   ``LV_COLOR_FORMAT_I1`` is the same, so the display driver copies rows
   (after the 8-byte palette LVGL puts in front) and calls ``FBIO_UPDATE``
-  once per frame.  LVGL already widens 1-bit areas to whole bytes.
+  once per frame.  LVGL already widens 1-bit areas to whole bytes.  The
+  shell reads the size and format from the framebuffer, so the same code
+  runs on colour screens too (``sim:pnut``).
 * ``LCD_UC8253_ASYNC`` makes ``FBIO_UPDATE`` return at once and folds what
   is drawn during a refresh into the next one, so typing fast costs a
-  refresh per burst.
+  refresh per burst; the shell also redraws a text field only every 600 ms
+  while typing (Settings > Display > Typing echo).
+* The shell's refresh modes (Settings > Display) map to the driver: Quality
+  asks for a full refresh every time, Balanced leaves partial refreshes
+  with a full one every N, Fast never forces one.  A full one also runs on
+  unlock.
+* The keyboard follows the design's map: W/S move the focus, A/D turn the
+  page, Q/E are Back and Enter; sym+Enter, sym+Backspace and sym+Space are
+  Options, Back and the previous page (the design calls the modifier Alt;
+  which key that should be here is still open).
 * The glass keys under the panel (``/dev/kbd1``, see Touch) are Home,
-  Messages and Phone; touch arrives on ``/dev/input0`` in panel
-  coordinates.
+  Messages and Phone (Home on Home locks); touch arrives on ``/dev/input0``
+  in panel coordinates, and the whole softkey bar takes taps.
+* The shell locks itself after ``ui.lock_after`` seconds without input
+  (60 by default) with the design's sleep screen.
+* Themes (colours, fonts, metrics) are files in ``/data/themes`` or on the
+  SD card, and fonts in them load through LVGL's POSIX drive, so the
+  ``full`` configuration has ``LV_USE_FS_POSIX`` on letter A.  After
+  changing any ``LV_`` option, delete LVGL's objects: its build does not
+  notice.
 * With ``PNUT_SHELL_KEYFIFO`` the shell takes keys from
   ``/var/run/pnut-shell-keys``, which makes it scriptable from the USB
-  console (``echo enter > /var/run/pnut-shell-keys``).
+  console (``echo enter > /var/run/pnut-shell-keys``).  The keys are real:
+  Enter in a conversation sends.
 
 To see what is on the panel without looking at it, read the driver's shadow
 framebuffer over JTAG (``g_epaperdev.shadow_fb``, 9600 bytes, the panel's
