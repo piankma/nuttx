@@ -38,9 +38,19 @@ bridge is needed.  The two hardware UARTs are free for the GNSS receiver
 Buttons
 =======
 
-The ``BOOT`` button is on GPIO0.  To enter the ROM download mode by hand,
-hold ``BOOT``, press and release ``RST`` on the back, then release ``BOOT``.
+There are two side buttons.  ``RST`` (S1) resets the chip.  ``BOOT`` (S2)
+pulls GPIO0 low through a 10 kΩ pull-up; to enter the ROM download mode by
+hand, hold ``BOOT``, press and release ``RST``, then release ``BOOT``.
 ``esptool`` normally does this automatically over USB-Serial-JTAG.
+
+With ``LILYGO_TDECK_MAX_POWERKEY`` (on in ``full``) ``BOOT`` is also the
+power key: ``/dev/kbd2`` is a one-key keyboard that reports
+``KEYCODE_POWER`` as a special key, press and release
+(``src/esp32s3_powerkey.c``).  The interrupt is taken on the low level
+(light sleep wakes on it), masked while a worker debounces the press and
+polls every 30 ms until the release.  LilyGo's own firmware uses the same
+button as its "user key" to wake from hibernation.  The pnut-os shell locks
+and unlocks with it.
 
 Building and Flashing
 =====================
@@ -394,10 +404,15 @@ Two details of this board are easy to get wrong:
   the arrow printed on it.  There are two of them, at either end of the
   bottom row.
 
-Layers follow what is printed on the keys.  Holding shift gives capitals,
-holding ``sym`` gives the digits and punctuation layer, and ``ALT`` toggles
-the shift layer on and off like a caps lock.  ``sym`` wins when both are
-held.  Modifiers are handled inside the driver and are never reported.
+The keyboard is a BlackBerry Q20's, and the layers follow its legends.
+Holding shift gives capitals; holding ``Alt`` (left, next to Z) gives the
+characters printed on the keys, digits and punctuation (the driver calls
+this held layer its symbol layer, ``TCA8418_SYM``); ``Alt`` + shift toggles
+caps lock (the driver's ``TCA8418_ALT``).  ``Alt`` wins when both are held.
+The ``Sym`` key (right of space) is not a modifier: it sends
+``KEYCODE_FIND``.  Modifiers are handled inside the driver and are never
+reported; a modifier's release always follows the base layer, so a shift
+let go while ``Alt`` is held is still let go.
 Space is reported as its ASCII value.  Enter and backspace are reported as
 special keycodes (``KEYBOARD_SPECPRESS`` with ``KEYCODE_ENTER`` and
 ``KEYCODE_BACKDEL``), so that each reader applies its own convention; the
@@ -406,12 +421,12 @@ terminal turns them into a newline and DEL.
 Where a layer has nothing at a position, the base layer is used instead, so
 the modifiers and the digit key keep working in every layer.
 
-With ``sym`` held, enter, backspace and space become keys of their own:
-``KEYCODE_MENU``, ``KEYCODE_CANCEL`` and ``KEYCODE_PAGEUP``.  The keyboard
-has no arrow or function keys, and these give a user interface its options,
-back and previous-page keys (the pnut-os shell uses them so).  Ordinary
-typing is unaffected: enter, backspace and space without ``sym`` are what
-they always were.
+With ``Alt`` held, enter, backspace and space become keys of their own:
+``KEYCODE_MENU``, ``KEYCODE_CANCEL`` and ``KEYCODE_PAGEUP`` (shift + space
+is ``KEYCODE_PAGEUP`` too).  The keyboard has no arrow or function keys,
+and these give a user interface its options, back and previous-page keys
+(the pnut-os shell uses them so).  Ordinary typing is unaffected: enter,
+backspace and space without ``Alt`` are what they always were.
 
 .. note::
 
@@ -857,14 +872,19 @@ what matters for the board:
   with a full one every N, Fast never forces one.  A full one also runs on
   unlock.
 * The keyboard follows the design's map: W/S move the focus, A/D turn the
-  page, Q/E are Back and Enter; sym+Enter, sym+Backspace and sym+Space are
-  Options, Back and the previous page (the design calls the modifier Alt;
-  which key that should be here is still open).
+  page, Q/E are Back and Enter; Alt+Enter, Alt+Backspace and Shift+Space
+  are Options, Back and the previous page; Sym is Find.
 * The glass keys under the panel (``/dev/kbd1``, see Touch) are Home,
   Messages and Phone (Home on Home locks); touch arrives on ``/dev/input0``
   in panel coordinates, and the whole softkey bar takes taps.
 * The shell locks itself after ``ui.lock_after`` seconds without input
-  (60 by default) with the design's sleep screen.
+  (60 by default) with the design's sleep screen.  The power key
+  (``/dev/kbd2``) locks from any screen and is the only thing that unlocks
+  (or any keyboard key, with ``ui.unlock`` set to ``key``); touch and the
+  glass keys never do.
+* The touch panel reports the whole glass: taps at the bottom edge came in
+  at y = 317-319 and at the right at x = 235-238, so the softkey bar needs
+  no margin.
 * Themes (colours, fonts, metrics) are files in ``/data/themes`` or on the
   SD card, and fonts in them load through LVGL's POSIX drive, so the
   ``full`` configuration has ``LV_USE_FS_POSIX`` on letter A.  After
