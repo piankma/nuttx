@@ -529,6 +529,8 @@ config SIM_X11UPDATE_INTERVAL
 	---help---
 		 X11 update sleep time
 
+endif # SIM_X11FB
+
 menu "Window Configuration"
 
 config SIM_FBHEIGHT
@@ -587,11 +589,11 @@ config SIM_FRAMEBUFFER
 	bool "Framebuffer"
 	depends on VIDEO_FB
 	---help---
-		Emulate a framebuffer
+		Emulate a framebuffer.  Without SIM_X11FB it is only memory,
+		with nothing to show it: for software that draws into
+		/dev/fb0 and is checked by reading the framebuffer back.
 
 endchoice
-
-endif # SIM_X11FB
 
 if INPUT
 config SIM_X11EVENT_INTERVAL
