@@ -31,6 +31,8 @@
 
 #include <stdbool.h>
 
+#include <nuttx/fs/ioctl.h>
+
 #ifdef CONFIG_LCD_UC8253
 
 /****************************************************************************
@@ -91,6 +93,19 @@
 /****************************************************************************
  * Public Types
  ****************************************************************************/
+
+/* ioctl commands, through the framebuffer (/dev/fbN) as well:
+ *
+ * UC8253IOC_FULLREFRESH - Make the next refresh a full one, whatever it
+ *   covers, to clear the ghosting partial refreshes leave behind.
+ *   Argument: none.
+ * UC8253IOC_SETFULLEVERY - Force a full refresh after this many partial
+ *   ones (0: never; CONFIG_LCD_UC8253_FULL_EVERY at start).
+ *   Argument: the count, 0..65535.
+ */
+
+#define UC8253IOC_FULLREFRESH   _LCDIOC(0x80)
+#define UC8253IOC_SETFULLEVERY  _LCDIOC(0x81)
 
 /* Board specific hooks.  The controller needs two signals that are not part
  * of the SPI bus: an active low reset, and a busy line the controller holds

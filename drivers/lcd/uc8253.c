@@ -173,6 +173,7 @@ struct uc8253_dev_s
   bool known;                                 /* glass_fb matches glass */
   bool dropped;                               /* First flush discarded */
   bool stale;                                 /* Last refresh failed */
+  bool full;                                  /* Next refresh is a full one */
 
   /* priv->panel serialises everything that talks to the controller and is
    * held for a whole refresh.  priv->fblock only protects the shadow
@@ -206,6 +207,7 @@ struct uc8253_dev_s
    */
 
   uint16_t partials;
+  uint16_t full_every;                        /* 0: never forced */
 
   /* Shadow framebuffer.  The controller's RAM cannot be read back over this
    * interface, so the driver keeps the frame here and pushes it on redraw.
@@ -291,6 +293,8 @@ static int  uc8253_getplaneinfo(FAR struct lcd_dev_s *dev, unsigned int pno,
 
 static int  uc8253_getpower(FAR struct lcd_dev_s *dev);
 static int  uc8253_setpower(FAR struct lcd_dev_s *dev, int power);
+static int  uc8253_ioctl(FAR struct lcd_dev_s *dev, int cmd,
+                         unsigned long arg);
 
 /****************************************************************************
  * Private Data
@@ -325,6 +329,7 @@ static const struct lcd_dev_s g_lcd_epaper_dev =
   .getplaneinfo = uc8253_getplaneinfo,
   .getpower     = uc8253_getpower,
   .setpower     = uc8253_setpower,
+  .ioctl        = uc8253_ioctl,
 };
 
 /* A single panel is supported */
@@ -1101,10 +1106,9 @@ static int uc8253_update(FAR struct uc8253_dev_s *priv)
    * often to clean it up.
    */
 
-  partial = !priv->stale &&
+  partial = !priv->stale && !priv->full &&
             (x > 0 || y > 0 || w < UC8253_XRES || h < UC8253_YRES) &&
-            (CONFIG_LCD_UC8253_FULL_EVERY == 0 ||
-             priv->partials < CONFIG_LCD_UC8253_FULL_EVERY);
+            (priv->full_every == 0 || priv->partials < priv->full_every);
 #endif
 
   uc8253_cleandirty(priv);
@@ -1185,6 +1189,7 @@ static int uc8253_update(FAR struct uc8253_dev_s *priv)
     {
       priv->partials = 0;
       priv->stale    = false;
+      priv->full     = false;
     }
 
 out:
@@ -1531,6 +1536,42 @@ static int uc8253_setpower(FAR struct lcd_dev_s *dev, int power)
 }
 
 /****************************************************************************
+ * Name: uc8253_ioctl
+ *
+ * Description:
+ *   The refresh policy, for a user interface that knows better than the
+ *   driver when ghosting matters: a full refresh on the next update (on
+ *   unlock, say), and how many partial refreshes may pass before one is
+ *   forced.  See include/nuttx/lcd/uc8253.h.
+ *
+ ****************************************************************************/
+
+static int uc8253_ioctl(FAR struct lcd_dev_s *dev, int cmd,
+                        unsigned long arg)
+{
+  FAR struct uc8253_dev_s *priv = (FAR struct uc8253_dev_s *)dev;
+
+  switch (cmd)
+    {
+      case UC8253IOC_FULLREFRESH:
+        priv->full = true;
+        return OK;
+
+      case UC8253IOC_SETFULLEVERY:
+        if (arg > UINT16_MAX)
+          {
+            return -EINVAL;
+          }
+
+        priv->full_every = (uint16_t)arg;
+        return OK;
+
+      default:
+        return -ENOTTY;
+    }
+}
+
+/****************************************************************************
  * Public Functions
  ****************************************************************************/
 
@@ -1560,7 +1601,9 @@ uc8253_initialize(FAR struct spi_dev_s *spi,
   priv->known      = false;
   priv->dropped    = false;
   priv->stale      = false;
+  priv->full       = false;
   priv->partials   = 0;
+  priv->full_every = CONFIG_LCD_UC8253_FULL_EVERY;
 
   nxmutex_init(&priv->panel);
   nxmutex_init(&priv->fblock);
