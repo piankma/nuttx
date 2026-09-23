@@ -75,6 +75,15 @@
 
 #define KBD_BS              TCA8418_SPEC(KEYCODE_BACKDEL)
 #define KBD_CR              TCA8418_SPEC(KEYCODE_ENTER)
+
+/* With the symbol key held, enter, backspace and space become keys of
+ * their own, which a user interface can give meanings to: menu (options),
+ * cancel (back) and page up.
+ */
+
+#define KBD_MENU            TCA8418_SPEC(KEYCODE_MENU)
+#define KBD_CANCEL          TCA8418_SPEC(KEYCODE_CANCEL)
+#define KBD_PGUP            TCA8418_SPEC(KEYCODE_PAGEUP)
 #define KBD_SP              ' '
 #define KBD__                TCA8418_NONE
 
@@ -124,10 +133,12 @@ static const uint16_t g_kbd_shift[TDECKMAX_KBD_ROWS * TDECKMAX_KBD_COLS] =
 static const uint16_t g_kbd_sym[TDECKMAX_KBD_ROWS * TDECKMAX_KBD_COLS] =
 {
   '#',          '1',   '2',   '3',   '(',   ')',   '_',   '-',   '+', '@',
-  '*',          '4',   '5',   '6',   '/',   ':',   ';',  '\'',  '"', KBD_BS,
-  TCA8418_ALT,  '7',   '8',   '9',   '?',   '!',   ',',   '.', KBD__, KBD_CR,
+  '*',          '4',   '5',   '6',   '/',   ':',   ';',  '\'',  '"',
+  KBD_CANCEL,
+  TCA8418_ALT,  '7',   '8',   '9',   '?',   '!',   ',',   '.', KBD__,
+  KBD_MENU,
   KBD__, KBD__, KBD__, KBD__, KBD__,
-  TCA8418_SHIFT, KBD__, KBD_SP, TCA8418_SYM, TCA8418_SHIFT
+  TCA8418_SHIFT, KBD__, KBD_PGUP, TCA8418_SYM, TCA8418_SHIFT
 };
 
 static const struct tca8418_config_s g_tca8418_config =

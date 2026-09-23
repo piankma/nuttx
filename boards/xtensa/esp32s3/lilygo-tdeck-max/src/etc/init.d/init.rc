@@ -55,6 +55,13 @@ service meshd meshd
    restart_period 1000
 #endif
 
+/* pnut-os's user interface, on the e-paper panel */
+
+#ifdef CONFIG_PNUT_SHELL
+service shell shell
+   restart_period 1000
+#endif
+
 #ifdef CONFIG_SYSTEM_NSH
 service console sh
    console
@@ -90,6 +97,9 @@ on init
 #endif
 #ifdef CONFIG_PNUT_MESHD
    start meshd
+#endif
+#ifdef CONFIG_PNUT_SHELL
+   start shell
 #endif
 #ifdef CONFIG_SYSTEM_CDCACM
    exec -- sercon

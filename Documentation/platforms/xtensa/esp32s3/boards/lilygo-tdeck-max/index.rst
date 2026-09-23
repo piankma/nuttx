@@ -224,8 +224,9 @@ full
 ----
 
 Everything the board can currently do at once: the e-paper panel, both
-backlights, the keyboard, a terminal on the panel and keyboard, Wi-Fi and
-Bluetooth LE, with the ``fb``, ``pwm``, ``kbd`` and ``nxterm`` examples.
+backlights, the keyboard, Wi-Fi and Bluetooth LE, the pnut-os system layer
+and its user interface on the panel, with the ``fb``, ``pwm``, ``kbd`` and
+``nxterm`` examples.
 This is the configuration to use on the device itself; ``nsh`` stays as the
 minimal one to fall back to when something needs to be bisected.
 
@@ -242,7 +243,8 @@ tree as ``apps/external``), ``init.rc`` starts its daemons before the shell
 and restarts one that exits: ``cfgd`` (settings), ``sysd`` (battery, clock,
 backlights), ``modemd`` (the modem), ``msgd`` (messages) and ``meshd`` (the
 LoRa mesh).  They own the hardware they drive; ``pnut`` is their
-command-line client.
+command-line client.  After them it starts ``shell``, the user interface on
+the panel (see User interface below).
 
 The panel is a GoodDisplay GDEQ031T10, a 3.1 inch 240x320 monochrome panel
 driven by a UC8253 controller, on the SPI2 bus it shares with the microSD
@@ -398,6 +400,13 @@ terminal turns them into a newline and DEL.
 
 Where a layer has nothing at a position, the base layer is used instead, so
 the modifiers and the digit key keep working in every layer.
+
+With ``sym`` held, enter, backspace and space become keys of their own:
+``KEYCODE_MENU``, ``KEYCODE_CANCEL`` and ``KEYCODE_PAGEUP``.  The keyboard
+has no arrow or function keys, and these give a user interface its options,
+back and previous-page keys (the pnut-os shell uses them so).  Ordinary
+typing is unaffected: enter, backspace and space without ``sym`` are what
+they always were.
 
 .. note::
 
@@ -803,12 +812,48 @@ delays stay right at either frequency.
    ``make clean``.  Otherwise the old value stays compiled in without any
    warning.
 
+User interface
+==============
+
+In ``full`` the panel shows pnut-os's ``shell``, a phone user interface
+built on LVGL 9: home screen, messages (SMS and the LoRa mesh), phone,
+settings.  Its source and its documentation are in the pnut-os repository;
+what matters for the board:
+
+* The framebuffer and LVGL agree on the pixel format.  ``/dev/fb0`` is
+  1 bpp, most significant bit first, a set bit white; LVGL's
+  ``LV_COLOR_FORMAT_I1`` is the same, so the display driver copies rows
+  (after the 8-byte palette LVGL puts in front) and calls ``FBIO_UPDATE``
+  once per frame.  LVGL already widens 1-bit areas to whole bytes.
+* ``LCD_UC8253_ASYNC`` makes ``FBIO_UPDATE`` return at once and folds what
+  is drawn during a refresh into the next one, so typing fast costs a
+  refresh per burst.
+* The glass keys under the panel (``/dev/kbd1``, see Touch) are Home,
+  Messages and Phone; touch arrives on ``/dev/input0`` in panel
+  coordinates.
+* With ``PNUT_SHELL_KEYFIFO`` the shell takes keys from
+  ``/var/run/pnut-shell-keys``, which makes it scriptable from the USB
+  console (``echo enter > /var/run/pnut-shell-keys``).
+
+To see what is on the panel without looking at it, read the driver's shadow
+framebuffer over JTAG (``g_epaperdev.shadow_fb``, 9600 bytes, the panel's
+format)::
+
+    (gdb) dump binary memory screen.bin &g_epaperdev.shadow_fb[0] &g_epaperdev.shadow_fb[9600]
+
+and open it as a 240x320 1-bit image (``Image.frombytes("1", (240, 320),
+data)`` in Pillow).
+
 On-device terminal
 ==================
 
-In the ``full`` configuration the panel and the keyboard form a terminal
-running NSH, so the device can be used without a computer.  It starts at
-boot and is independent of the USB console, which keeps its own shell.
+The panel and the keyboard can also form a terminal running NSH, so the
+device can be used without a computer; it is independent of the USB
+console, which keeps its own shell.  In ``full`` it no longer starts at
+boot, because the pnut-os shell owns the panel: to get it back, disable
+``PNUT_SHELL`` and enable ``LILYGO_TDECK_MAX_BOOT_TERMINAL``, or run
+``nxterm`` from the USB console in a build without the shell.  The two
+cannot share the panel.
 
 ``nxterm`` (``apps/examples/nxterm``) draws the text through NX onto
 ``/dev/lcd0`` in the X11 6x13 font.  Its NSH session runs on a
@@ -939,12 +984,19 @@ Verified on hardware (2026-09-20/21):
 * The on-device terminal: it starts at boot, shows the NSH banner and
   prompt, echoes typed characters, handles backspace and shows command
   output.
+* The pnut-os user interface (2026-09-23): it starts at boot, and every
+  screen was driven through its key FIFO and read back from the panel's
+  shadow framebuffer over JTAG, taps included (fed to the LVGL pointer the
+  same way the touch panel feeds it).
 
 Not verified:
 
 * A GNSS position fix: tried only indoors, from a cold start.
-* Anything on the modem that needs a SIM card: registration, SMS, calls
-  and a data connection.
+* With a SIM (Orange Polska), registration on LTE and the network's time
+  are verified; SMS both ways, calls and a data connection are not.
+* The user interface with fingers and keys on the device itself (so far
+  only scripted from the USB console), and the ``sym`` + enter, backspace
+  and space codes.
 * Recovery from repeated failed associations: after a few attempts against an
   access point that was no longer present, ``wapi scan wlan0`` began returning
   an empty list, including for networks that were definitely in range.  A board
