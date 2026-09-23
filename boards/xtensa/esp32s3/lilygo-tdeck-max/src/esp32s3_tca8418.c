@@ -76,14 +76,20 @@
 #define KBD_BS              TCA8418_SPEC(KEYCODE_BACKDEL)
 #define KBD_CR              TCA8418_SPEC(KEYCODE_ENTER)
 
-/* With the symbol key held, enter, backspace and space become keys of
- * their own, which a user interface can give meanings to: menu (options),
- * cancel (back) and page up.
+/* The keyboard is a BlackBerry Q20's.  Its Alt key (left, next to Z) is
+ * held for the characters printed on the keys (the driver's symbol
+ * layer), and with it enter, backspace and space become keys of their
+ * own, which a user interface gives meanings to: menu (options), cancel
+ * (back) and page up.  Alt + shift toggles caps lock.  Its Sym key (right
+ * of space) is Find.  Shift + space is page up too.
  */
 
 #define KBD_MENU            TCA8418_SPEC(KEYCODE_MENU)
 #define KBD_CANCEL          TCA8418_SPEC(KEYCODE_CANCEL)
 #define KBD_PGUP            TCA8418_SPEC(KEYCODE_PAGEUP)
+#define KBD_FIND            TCA8418_SPEC(KEYCODE_FIND)
+#define KBD_ALT             TCA8418_SYM     /* Held: the printed layer */
+#define KBD_CAPS            TCA8418_ALT     /* Toggles caps lock */
 #define KBD_SP              ' '
 #define KBD__                TCA8418_NONE
 
@@ -102,7 +108,7 @@ static void tdeckmax_kbd_clear(FAR const struct tca8418_config_s *config);
  ****************************************************************************/
 
 /* The keyboard as it is printed on the keys, left to right and top to
- * bottom.  The bottom row has only five keys: shift, 0, space, symbol and a
+ * bottom.  The bottom row has only five keys: shift, 0, space, sym and a
  * second shift.
  */
 
@@ -110,24 +116,24 @@ static const uint16_t g_kbd_base[TDECKMAX_KBD_ROWS * TDECKMAX_KBD_COLS] =
 {
   'q',          'w',   'e',   'r',   't',   'y',   'u',   'i',   'o', 'p',
   'a',          's',   'd',   'f',   'g',   'h',   'j',   'k',   'l', KBD_BS,
-  TCA8418_ALT,  'z',   'x',   'c',   'v',   'b',   'n',   'm',   '$', KBD_CR,
+  KBD_ALT,      'z',   'x',   'c',   'v',   'b',   'n',   'm',   '$', KBD_CR,
   KBD__, KBD__, KBD__, KBD__, KBD__,
-  TCA8418_SHIFT, '0', KBD_SP, TCA8418_SYM, TCA8418_SHIFT
+  TCA8418_SHIFT, '0', KBD_SP, KBD_FIND, TCA8418_SHIFT
 };
 
-/* Held shift, or latched with ALT */
+/* Held shift, or caps lock */
 
 static const uint16_t g_kbd_shift[TDECKMAX_KBD_ROWS * TDECKMAX_KBD_COLS] =
 {
   'Q',          'W',   'E',   'R',   'T',   'Y',   'U',   'I',   'O', 'P',
   'A',          'S',   'D',   'F',   'G',   'H',   'J',   'K',   'L', KBD_BS,
-  TCA8418_ALT,  'Z',   'X',   'C',   'V',   'B',   'N',   'M',   '$', KBD_CR,
+  KBD_ALT,      'Z',   'X',   'C',   'V',   'B',   'N',   'M',   '$', KBD_CR,
   KBD__, KBD__, KBD__, KBD__, KBD__,
-  TCA8418_SHIFT, '0', KBD_SP, TCA8418_SYM, TCA8418_SHIFT
+  TCA8418_SHIFT, '0', KBD_PGUP, KBD_FIND, TCA8418_SHIFT
 };
 
-/* Held symbol key.  Anything left empty here falls back to the base layer,
- * so the digit and the modifiers keep working.
+/* Held Alt: what is printed on the keys.  Anything left empty here falls
+ * back to the base layer, so the digit and the modifiers keep working.
  */
 
 static const uint16_t g_kbd_sym[TDECKMAX_KBD_ROWS * TDECKMAX_KBD_COLS] =
@@ -135,10 +141,10 @@ static const uint16_t g_kbd_sym[TDECKMAX_KBD_ROWS * TDECKMAX_KBD_COLS] =
   '#',          '1',   '2',   '3',   '(',   ')',   '_',   '-',   '+', '@',
   '*',          '4',   '5',   '6',   '/',   ':',   ';',  '\'',  '"',
   KBD_CANCEL,
-  TCA8418_ALT,  '7',   '8',   '9',   '?',   '!',   ',',   '.', KBD__,
+  KBD_ALT,      '7',   '8',   '9',   '?',   '!',   ',',   '.', KBD__,
   KBD_MENU,
   KBD__, KBD__, KBD__, KBD__, KBD__,
-  TCA8418_SHIFT, KBD__, KBD_PGUP, TCA8418_SYM, TCA8418_SHIFT
+  KBD_CAPS, KBD__, KBD_PGUP, KBD_FIND, KBD_CAPS
 };
 
 static const struct tca8418_config_s g_tca8418_config =

@@ -279,6 +279,17 @@ int esp32s3_bringup(void)
     }
 #endif
 
+#ifdef CONFIG_LILYGO_TDECK_MAX_POWERKEY
+  /* Register /dev/kbd2, the side button as a power key */
+
+  ret = tdeckmax_powerkey_initialize();
+  if (ret < 0)
+    {
+      syslog(LOG_ERR, "ERROR: Failed to initialize the power key: %d\n",
+             ret);
+    }
+#endif
+
 #if defined(CONFIG_ESPRESSIF_LEDC) && defined(CONFIG_PWM)
   /* Register /dev/pwm0.  Channel 1 is the e-paper frontlight and channel 2
    * is the keyboard backlight; both are off until something drives them.

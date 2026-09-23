@@ -57,6 +57,10 @@ ifeq ($(CONFIG_INPUT_CST3530),y)
 CSRCS += esp32s3_touch.c
 endif
 
+ifeq ($(CONFIG_LILYGO_TDECK_MAX_POWERKEY),y)
+CSRCS += esp32s3_powerkey.c
+endif
+
 ifeq ($(CONFIG_ESPRESSIF_WIRELESS),y)
 CSRCS += esp32s3_radios.c
 endif

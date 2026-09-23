@@ -308,6 +308,23 @@ int tdeckmax_touch_initialize(void);
 #endif
 
 /****************************************************************************
+ * Name: tdeckmax_powerkey_initialize
+ *
+ * Description:
+ *   Register the side button on GPIO0 as /dev/kbd2, a one-key keyboard
+ *   that reports KEYCODE_POWER.
+ *
+ * Returned Value:
+ *   Zero (OK) is returned on success; A negated errno value is returned
+ *   to indicate the nature of any failure.
+ *
+ ****************************************************************************/
+
+#ifdef CONFIG_LILYGO_TDECK_MAX_POWERKEY
+int tdeckmax_powerkey_initialize(void);
+#endif
+
+/****************************************************************************
  * Name: board_spiflash_init
  *
  * Description:

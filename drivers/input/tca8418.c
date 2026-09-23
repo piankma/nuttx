@@ -377,6 +377,22 @@ static void tca8418_event(FAR struct tca8418_dev_s *priv, uint8_t event)
       key = config->base[row * config->cols + col];
     }
 
+  /* Letting go of a modifier always lets go of it, whatever layer is up
+   * by then: a shift released while the symbol key is held would stay
+   * counted as held if the symbol layer gave that position another
+   * meaning (caps lock, say).
+   */
+
+  if (!press)
+    {
+      uint16_t base = config->base[row * config->cols + col];
+
+      if (base == TCA8418_SHIFT || base == TCA8418_SYM)
+        {
+          key = base;
+        }
+    }
+
   iinfo("row %u col %u %s key 0x%04x\n",
         row, col, press ? "press" : "release", key);
 

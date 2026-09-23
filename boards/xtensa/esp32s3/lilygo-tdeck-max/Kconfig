@@ -13,6 +13,15 @@ config LILYGO_TDECK_MAX_XL9555_FREQUENCY
 		I2C bus frequency used to talk to the XL9555 I/O expander, which
 		gates the power of most peripherals on the T-Deck Max.
 
+config LILYGO_TDECK_MAX_POWERKEY
+	bool "Side button as a power key (/dev/kbd2)"
+	default n
+	depends on INPUT_KEYBOARD && ESPRESSIF_GPIO_IRQ && SCHED_LPWORK
+	---help---
+		Register the side button on GPIO0 (S2, "BOOT") as a one-key
+		keyboard, /dev/kbd2, reporting KEYCODE_POWER.  The other side
+		button, S1, resets the chip.
+
 config LILYGO_TDECK_MAX_TCA8418_FREQUENCY
 	int "TCA8418 I2C frequency (Hz)"
 	default 400000
