@@ -700,13 +700,29 @@ registers on LTE at -51 dBm, and the network's time sets the device clock
 (``AT+CTZU=1``, ``AT+CCLK?``).  The modem refuses caller ID (``AT+CLIP=1``)
 until the SIM has loaded, which it announces with ``PB DONE``.
 
+SMS work both ways.  This modem refuses ``AT+CMGS`` (plain ``ERROR``) with
+the UCS2 character set and the GSM 7-bit data coding together; a GSM text
+has to be sent with ``AT+CSCS="IRA"``, and the number given plain rather
+than as UCS-2 hex.  A sender that is a name (``Orange info``) is reported
+as GSM 7-bit packed into semi-octets, written as the characters ``0`` to
+``?`` (``?4978==7>2382=>63?;1``).
+
+Calls do not work with that SIM, in either direction: a call to the device
+goes to voicemail, and one from it stays at dialling.  The module
+(A7682E: LTE-FDD B1/B3/B5/B7/B8/B20 and GSM 900/1800, firmware
+``A011B15A7682M7``) is not registered for voice over LTE (``+CIREG: 1,0``,
+``+CAVIMS: 0``; the IMS context, cid 8, is deactivated by the modem at
+start), so a call must fall back to GSM.  Set to GSM only
+(``AT+CNMP=13``) it found no GSM network in several minutes, then stopped
+answering AT commands; the mode survives power cycles, so it took a
+restart that sets ``AT+CNMP=2`` first thing to recover.
+
 Verified without a SIM card: the modem answers, identifies itself
 (``A7682E``, firmware ``A7682M7_V1.11.1``, its IMEI), reports the strongest
 cell it can hear (``+CSQ`` at -67 dBm) and says that no SIM is inserted;
-the terminal, and powering it down and up again, work.  Not yet verified,
-because it needs a SIM: registration, SMS, and a data connection (PPP is
-in NuttX as ``NETUTILS_PPPD`` with ``NETUTILS_CHAT``, and is not configured
-here yet).
+the terminal, and powering it down and up again, work.  Not yet verified:
+a data connection (PPP is in NuttX as ``NETUTILS_PPPD`` with
+``NETUTILS_CHAT``, and is not configured here yet).
 
 .. warning::
 
@@ -992,8 +1008,9 @@ Verified on hardware (2026-09-20/21):
 Not verified:
 
 * A GNSS position fix: tried only indoors, from a cold start.
-* With a SIM (Orange Polska), registration on LTE and the network's time
-  are verified; SMS both ways, calls and a data connection are not.
+* With a SIM (Orange Polska), registration on LTE, the network's time and
+  SMS both ways are verified; calls fail (no voice over LTE, and no GSM
+  found to fall back to, see Modem), and a data connection is not tried.
 * The user interface with fingers and keys on the device itself (so far
   only scripted from the USB console), and the ``sym`` + enter, backspace
   and space codes.
