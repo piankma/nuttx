@@ -1160,12 +1160,20 @@ static int fat_path2dirname(FAR const char **path,
 
       if (strlen((FAR const char *)dirinfo->fd_lfname) <= DIR_MAXFNAME)
         {
-          /* Get short file name for given path */
+          /* Get short file name for given path.  The copy keeps the
+           * terminating NUL: the parse reads until it, and an 11-character
+           * name ("messages.db") filled the buffer without one, so the
+           * parse read past it and whether the name became a short name
+           * depended on what followed on the stack.  Creating a file and
+           * looking it up could then decide differently, and the file
+           * could not be found again.
+           */
 
-          char name[DIR_MAXFNAME];
+          char name[DIR_MAXFNAME + 1];
           FAR const char *tmp;
 
           memcpy(name, dirinfo->fd_lfname, DIR_MAXFNAME);
+          name[DIR_MAXFNAME] = '\0';
           tmp = (FAR const char *)name;
           if (fat_parsesfname(&tmp, dirinfo, NULL) != OK)
             {
