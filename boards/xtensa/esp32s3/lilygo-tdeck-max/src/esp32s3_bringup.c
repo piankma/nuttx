@@ -100,6 +100,18 @@ int esp32s3_bringup(void)
     }
 #endif
 
+#ifdef CONFIG_FS_BINFS
+  /* /bin: the built-in programs as files, for posix_spawn() and exec()
+   * (the adb shell starts /bin/sh)
+   */
+
+  ret = nx_mount(NULL, "/bin", "binfs", 0, NULL);
+  if (ret < 0)
+    {
+      syslog(LOG_ERR, "ERROR: Failed to mount binfs at /bin: %d\n", ret);
+    }
+#endif
+
 #ifdef CONFIG_FS_TMPFS
   /* Mount the tmpfs file system */
 

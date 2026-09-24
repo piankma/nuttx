@@ -79,7 +79,11 @@ service console sh
    restart_period 1000
 #endif
 
-#ifdef CONFIG_SYSTEM_ADBD
+/* adb: with pnut-os, sysd starts and stops it (the setting dev.adb,
+ * off unless set)
+ */
+
+#if defined(CONFIG_SYSTEM_ADBD) && !defined(CONFIG_PNUT_SYSD)
 service adbd adbd
 #endif
 
@@ -124,7 +128,7 @@ on init
 #ifdef CONFIG_SYSTEM_NSH
    start console
 #endif
-#ifdef CONFIG_SYSTEM_ADBD
+#if defined(CONFIG_SYSTEM_ADBD) && !defined(CONFIG_PNUT_SYSD)
    start adbd
 #endif
 #ifdef CONFIG_SYSTEM_FASTBOOTD
