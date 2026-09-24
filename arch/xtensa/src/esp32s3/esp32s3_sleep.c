@@ -222,6 +222,13 @@ bool esp32s3_sleep_idle(void)
 
   esp_light_sleep_start();
 
+  /* The counter was moved on by the time slept, measured with the slow
+   * RC clock: it can pass the interval timer's alarm, which would then
+   * never fire
+   */
+
+  esp32s3_tickless_resync();
+
   up_irq_restore(flags);
   return true;
 }

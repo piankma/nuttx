@@ -49,5 +49,17 @@
 
 uint64_t esp32s3_tickless_next(void);
 
+/****************************************************************************
+ * Name: esp32s3_tickless_resync
+ *
+ * Description:
+ *   Make sure the interval timer still fires after the counter jumped
+ *   forward (a light sleep corrects it by the time slept): an alarm the
+ *   counter passed without reaching it is set again, to fire at once.
+ *
+ ****************************************************************************/
+
+void esp32s3_tickless_resync(void);
+
 #endif /* CONFIG_SCHED_TICKLESS */
 #endif /* __ARCH_XTENSA_SRC_ESP32S3_ESP32S3_TICKLESS_H */
