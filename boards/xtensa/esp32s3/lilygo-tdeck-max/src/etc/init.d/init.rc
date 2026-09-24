@@ -61,6 +61,11 @@ service msgd msgd
    restart_period 1000
 #endif
 
+#ifdef CONFIG_PNUT_LORAD
+service lorad lorad
+   restart_period 1000
+#endif
+
 #ifdef CONFIG_PNUT_MESHD
 service meshd meshd
    restart_period 1000
@@ -115,6 +120,9 @@ on init
 #endif
 #ifdef CONFIG_PNUT_MSGD
    start msgd
+#endif
+#ifdef CONFIG_PNUT_LORAD
+   start lorad
 #endif
 #ifdef CONFIG_PNUT_MESHD
    start meshd
