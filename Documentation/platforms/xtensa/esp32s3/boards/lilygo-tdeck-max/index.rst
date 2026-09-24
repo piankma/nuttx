@@ -250,8 +250,10 @@ on the modem forever.
 
 When the out-of-tree pnut-os system layer is built in (linked into the apps
 tree as ``apps/external``), ``init.rc`` starts its daemons before the shell
-and restarts one that exits: ``cfgd`` (settings), ``sysd`` (battery, clock,
-backlights), ``modemd`` (the modem), ``msgd`` (messages) and ``meshd`` (the
+and restarts one that exits: ``svcd`` (the registry), ``cfgd`` (settings),
+``notifyd`` (notifications), ``logd`` (the kept log), ``sysd`` (battery,
+clock, backlights), ``modemd`` (the modem), ``msgd`` (messages, in SQLite),
+``dbd`` (apps' databases), ``lorad`` (the LoRa radio) and ``meshd`` (the
 LoRa mesh).  They own the hardware they drive; ``pnut`` is their
 command-line client.  After them it starts ``shell``, the user interface on
 the panel (see User interface below).
@@ -1061,6 +1063,22 @@ Verified on hardware (2026-09-20/21):
 * microSD: a FAT32 card mounts; 8 KB of unique data written, unmounted,
   remounted and read back identical.  256 KB writes at about 113 KB/s and
   reads at about 1.4 MB/s (polled SPI, no DMA).
+* The FAT driver lost files whose name was exactly eleven characters and
+  all lower case (``messages.db``, with ``FAT_LCNAMES``): the file was
+  listed, but stat(), open() and unlink() said ENOENT.
+  ``fat_path2dirname()`` tried the name as a short one from an 11-byte
+  copy without its terminating NUL, and the parse ran on into the stack,
+  so creating and looking up could decide differently.  Fixed in
+  ``fs/fat/fs_fat32dirent.c``; the lost entries could then be removed.
+* SQLite (``LIB_SQLITE``, the small build) runs on the card and on the
+  ``/data`` littlefs with a rollback journal; its file locks need
+  ``FS_LOCK_BUCKET_SIZE``.  pnut-os keeps its messages in it
+  (``/mnt/sd/pnut/messages.db``) and gives apps their own databases (dbd).
+  It adds 377 KB to the image, which is now 2.0 MB.  The apps tree's
+  recipe fetches sqlite.org's amalgamation; ``sqlite_cfg.h`` declares
+  ``pread64()`` only with ``FS_LARGEFILE``, and makes SQLite's ``u32`` an
+  ``unsigned int`` as ``sqlite3.h`` has it (``uint32_t`` is ``unsigned
+  long`` on Xtensa).
 * BQ27220 fuel gauge: voltage, current, temperature, state of charge and
   capacities read back sensibly (it is still at factory defaults: 1500 mAh
   design capacity, 0 cycles, so its percentage is not yet meaningful).  The
