@@ -33,6 +33,7 @@
 #include <signal.h>
 #include <assert.h>
 
+#include <nuttx/cancelpt.h>
 #include <nuttx/pthread.h>
 #include <nuttx/sched.h>
 #include <nuttx/spinlock.h>
@@ -226,6 +227,23 @@ static void nxsig_abnormal_termination(int signo)
    */
 
   group_kill_children(rtcb);
+#endif
+
+#ifdef CONFIG_CANCELLATION_POINTS
+  /* A thread waiting in a call (poll, accept, read...) holds what the call
+   * set up: poll registrations in drivers, references to files.  Exiting
+   * from here, inside the call, would leave them behind, pointing into a
+   * stack that is gone, and a driver notifying them later would crash.
+   * So let the call end first: it returns (EINTR) when this handler does,
+   * undoing what it set up, and leaving its cancellation point exits the
+   * thread.
+   */
+
+  if (tls_get_info()->tl_cpcount > 0)
+    {
+      tls_get_info()->tl_cpstate |= CANCEL_FLAG_CANCEL_PENDING;
+      return;
+    }
 #endif
 
   tls_cleanup_popall(tls_get_info());
