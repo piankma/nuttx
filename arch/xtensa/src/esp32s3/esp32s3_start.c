@@ -183,6 +183,7 @@ extern uint8_t _rodata_reserved_end[];
 #ifdef CONFIG_XTENSA_EXTMEM_BSS
 extern uintptr_t _ext_ram_bss_start;
 extern uintptr_t _ext_ram_bss_end;
+extern uintptr_t _ext_ram_noinit_start;
 #endif
 
 /* Address of the IDLE thread stacks.
@@ -424,7 +425,8 @@ noinstrument_function void noreturn_function IRAM_ATTR __esp32s3_start(void)
 
 #ifdef CONFIG_XTENSA_EXTMEM_BSS
   memset(&_ext_ram_bss_start, 0,
-         (&_ext_ram_bss_end - &_ext_ram_bss_start) * sizeof(uintptr_t));
+         (&_ext_ram_noinit_start - &_ext_ram_bss_start) *
+         sizeof(uintptr_t));
 #endif
 
   /* Setup the syscall table needed by the ROM code */

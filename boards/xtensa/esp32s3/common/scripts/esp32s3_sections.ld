@@ -777,6 +777,12 @@ SECTIONS
     *libpython3.13.a:(*.PyRuntime)
     *libpython3.13.a:(.bss .bss.*)
     . = ALIGN(4);
+
+    /* Not cleared at boot: kept over a software reset (a RAM log) */
+
+    _ext_ram_noinit_start = ABSOLUTE(.);
+    *(.ext_ram.noinit .ext_ram.noinit.*)
+    . = ALIGN(4);
     _ext_ram_bss_end = ABSOLUTE(.);
   } > extern_ram_seg
 #endif

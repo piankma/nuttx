@@ -34,6 +34,10 @@
 
 #include "esp32s3_systemreset.h"
 
+/* ROM: write the external memory's data cache back to the PSRAM */
+
+extern void cache_writeback_all(void);
+
 #ifdef CONFIG_BOARDCTL_RESET
 
 #if CONFIG_BOARD_ASSERT_RESET_VALUE == EXIT_SUCCESS
@@ -78,6 +82,14 @@ int board_reset(int status)
       default:
         break;
     }
+
+  /* The RAM log is in PSRAM and kept over the reset, for the next boot to
+   * read (a crash's dump): write back what is still only in the cache.
+   */
+
+#ifdef CONFIG_ESP32S3_SPIRAM
+  cache_writeback_all();
+#endif
 
   up_systemreset();
 
