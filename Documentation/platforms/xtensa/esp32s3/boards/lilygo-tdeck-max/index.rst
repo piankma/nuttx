@@ -903,6 +903,14 @@ what matters for the board:
   console (``echo enter > /var/run/pnut-shell-keys``).  The keys are real:
   Enter in a conversation sends.
 
+* The shell speaks English or Polish (``sys.language``).  Its catalogues
+  are gettext ``.mo`` files (``LIBC_LOCALE_GETTEXT``) in a ROMFS image
+  linked into pnut-os; svcd registers it as a ROM disk
+  (``BOARDCTL_ROMDISK``, ``/dev/ram2``) and mounts it at
+  ``/usr/share/pnut``, which ``LIBC_LOCALE_PATH`` points into.  The fonts
+  cover Latin Extended-A, so Polish letters show; typing them is not done
+  yet.
+
 To see what is on the panel without looking at it, read the driver's shadow
 framebuffer over JTAG (``g_epaperdev.shadow_fb``, 9600 bytes, the panel's
 format)::
