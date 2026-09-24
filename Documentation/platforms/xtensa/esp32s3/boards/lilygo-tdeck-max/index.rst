@@ -792,6 +792,14 @@ stays awake.  It drew 98 mA before these changes:
   (``ESP32S3_TICKLESS``, with ``USEC_PER_TICK`` kept at 10000 so the 32-bit
   tick counter does not wrap within days).  It saves no measurable power by
   itself, but it is what lets the CPU stay asleep for longer than a tick.
+  The ESP32-S3 tickless driver could lose its alarm: set to "counter +
+  0" for a timer already due, the target was behind the counter by the
+  time the comparator loaded it and never fired, and with it no timer of
+  the system ever did again (every ``usleep`` and timed wait hung, while
+  interrupts still worked).  The alarm is now kept at least 2 us ahead
+  and checked after loading, its interrupt is cleared before it is armed
+  rather than after, and a light sleep that moves the counter past it
+  sets it again (``esp32s3_tickless_resync()``).
 * The start code now loads the chip's calibrated core voltages from eFuse
   (``esp_rtc_init()``, as the ESP32 and RISC-V Espressif ports already did).
   Without them the HAL applies conservative defaults, about 40 mV higher on
@@ -903,6 +911,55 @@ format)::
 
 and open it as a 240x320 1-bit image (``Image.frombytes("1", (240, 320),
 data)`` in Pillow).
+
+System log, crash reports and adb
+=================================
+
+The ``full`` configuration keeps a log across resets and can be reached
+from a computer over the network; pnut-os's ``docs/logging.md`` describes
+how it is used.
+
+* **The RAM log** (``/dev/kmsg``) is 64 KB in PSRAM
+  (``RAMLOG_BUFSIZE``), in a section the start code does not clear:
+  ``.ext_ram.noinit``, at the end of the external-RAM BSS
+  (``XTENSA_EXTMEM_BSS``; the linker script's ``_ext_ram_noinit_start``
+  marks where ``esp32s3_start.c`` stops clearing).  The RAM log keeps its
+  contents when its header's magic number survived, so after a software
+  reset, a flash or an EN reset it still holds the boot before; a power
+  cut clears it.  ``SPIRAM_MEMTEST`` is off, as it overwrote all of PSRAM
+  at boot.  Moving the external-RAM BSS on also moved the Wi-Fi
+  libraries' 9 KB of BSS out of internal RAM.
+* **Lines** carry a millisecond timestamp, the priority and the task
+  (``SYSLOG_TIMESTAMP``, ``SYSLOG_TIMESTAMP_MS``, ``SYSLOG_PRIORITY``,
+  ``SYSLOG_PROCESS_NAME``): ``[   12.345] [  WARN] modemd: ...``.
+* **A panic resets the board** (``BOARD_RESET_ON_ASSERT=1``) instead of
+  hanging.  ``board_reset()`` writes the PSRAM data cache back first
+  (``Cache_WriteBack_All``, from ROM), so the panic's dump is in the RAM
+  log at the next boot, where logd saves it as a crash report.
+* ``/var/log`` is a pseudo-filesystem soft link to ``/data/log``
+  (``FS_LINKS``).  A soft link into a mounted volume used to lose the
+  rest of the path: opening ``/var/log/system.log`` opened the directory.
+  ``inode_search()`` kept that rest as a pointer into its buffer, which
+  following the link freed and reused; it now keeps a copy.
+* ``/bin`` is binfs (``FS_BINFS``), mounted by the board: the built-in
+  programs as files, for ``posix_spawn()``.
+* **adb** (``SYSTEM_ADBD``, microADB with libuv) runs over TCP, port 5555,
+  with shell, file and logcat services; pnut-os's sysd starts it when the
+  setting ``dev.adb`` is on.  Only computers whose keys are in
+  ``/data/adb/adb_keys`` connect: microADB's own key check was a stub
+  that accepted everyone, and ``apps/system/adb/adb_auth.c`` now verifies
+  the RSA signature.  ``/dev/urandom`` comes from the hardware RNG
+  (``DEV_URANDOM_ARCH``) for adb's tokens.  USB adb is not set up: the
+  one USB port stays the USB-Serial-JTAG console and JTAG.
+* **kill** works (``SIG_DEFAULT``), and killing a task ends its threads at
+  once (``GROUP_KILL_CHILDREN_TIMEOUT_MS=0``; the default waited for ever
+  for them to exit and left the group half torn down).  A task killed
+  while it waits in a call never releases that call's hold on the file,
+  so the file stays open; a local socket's address can therefore be taken
+  over by a new server once its old owner's process is gone
+  (``net/local/local_bind.c``), which lets init restart a daemon.
+* Ctrl-C on the USB console interrupts the running command
+  (``TTY_SIGINT``).
 
 On-device terminal
 ==================
