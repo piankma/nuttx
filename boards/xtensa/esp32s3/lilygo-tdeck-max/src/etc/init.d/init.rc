@@ -27,8 +27,14 @@
  */
 
 /* pnut-os daemons (the pnut-os repository, built as apps/external).  init
- * restarts one that exits.
+ * restarts one that exits.  svcd, the registry, comes first: the others
+ * register with it and wait for each other through it.
  */
+
+#ifdef CONFIG_PNUT_SVCD
+service svcd svcd
+   restart_period 1000
+#endif
 
 #ifdef CONFIG_PNUT_CFGD
 service cfgd cfgd
@@ -83,6 +89,9 @@ service terminal nxterm
 #endif
 
 on init
+#ifdef CONFIG_PNUT_SVCD
+   start svcd
+#endif
 #ifdef CONFIG_PNUT_CFGD
    start cfgd
 #endif
