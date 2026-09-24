@@ -953,11 +953,17 @@ how it is used.
   one USB port stays the USB-Serial-JTAG console and JTAG.
 * **kill** works (``SIG_DEFAULT``), and killing a task ends its threads at
   once (``GROUP_KILL_CHILDREN_TIMEOUT_MS=0``; the default waited for ever
-  for them to exit and left the group half torn down).  A task killed
-  while it waits in a call never releases that call's hold on the file,
-  so the file stays open; a local socket's address can therefore be taken
-  over by a new server once its old owner's process is gone
-  (``net/local/local_bind.c``), which lets init restart a daemon.
+  for them to exit and left the group half torn down).  A thread killed
+  while it waited in a call (``poll``, ``accept``, ``read``) used to exit
+  from inside it, leaving the call's poll registrations in drivers and
+  its references to files behind: a later notification called into the
+  dead thread's stack (killing meshd crashed msgd).  With
+  ``CANCELLATION_POINTS`` the cancelled threads are woken from their
+  calls and unwind, and the default kill action (``sig_default.c``) lets
+  the signalled thread leave its call first, then exit.  A local socket's
+  address can also be taken over by a new server once its old owner's
+  process is gone (``net/local/local_bind.c``), so init can restart a
+  daemon.
 * Ctrl-C on the USB console interrupts the running command
   (``TTY_SIGINT``).
 
