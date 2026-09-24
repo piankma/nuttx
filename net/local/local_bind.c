@@ -31,6 +31,7 @@
 #include <assert.h>
 
 #include <nuttx/net/net.h>
+#include <nuttx/sched.h>
 
 #include "local/local.h"
 
@@ -53,6 +54,7 @@ int psock_local_bind(FAR struct socket *psock,
   FAR struct local_conn_s *conn = psock->s_conn;
   FAR const struct sockaddr_un *unaddr =
     (FAR const struct sockaddr_un *)addr;
+  FAR struct local_conn_s *other;
   int index;
 
   DEBUGASSERT(unaddr->sun_family == AF_LOCAL);
@@ -67,10 +69,27 @@ int psock_local_bind(FAR struct socket *psock,
   /* Check if local address is already in use */
 
   local_lock();
-  if (local_findconn(conn, unaddr) != NULL)
+  other = local_findconn(conn, unaddr);
+  if (other != NULL)
     {
-      local_unlock();
-      return -EADDRINUSE;
+#ifdef CONFIG_NET_LOCAL_SCM
+      /* A server killed while it waited in accept() leaves its socket
+       * behind: the waiting call holds a reference to the socket's file,
+       * so the file is never closed.  Let a new socket take the address
+       * of one whose process is gone (a server restarted after a crash).
+       */
+
+      if (other->lc_state != LOCAL_STATE_UNBOUND &&
+          nxsched_get_tcb(other->lc_cred.pid) == NULL)
+        {
+          other->lc_path[0] = '\0';
+        }
+      else
+#endif
+        {
+          local_unlock();
+          return -EADDRINUSE;
+        }
     }
 
   local_unlock();
