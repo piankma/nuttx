@@ -41,6 +41,11 @@ service cfgd cfgd
    restart_period 1000
 #endif
 
+#ifdef CONFIG_PNUT_NOTIFYD
+service notifyd notifyd
+   restart_period 1000
+#endif
+
 #ifdef CONFIG_PNUT_LOGD
 service logd logd
    restart_period 1000
@@ -108,6 +113,9 @@ on init
 #endif
 #ifdef CONFIG_PNUT_CFGD
    start cfgd
+#endif
+#ifdef CONFIG_PNUT_NOTIFYD
+   start notifyd
 #endif
 #ifdef CONFIG_PNUT_LOGD
    start logd
