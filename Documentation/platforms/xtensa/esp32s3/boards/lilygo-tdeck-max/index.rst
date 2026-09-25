@@ -762,7 +762,10 @@ goes to voicemail, and one from it stays at dialling.  The module
 (A7682E: LTE-FDD B1/B3/B5/B7/B8/B20 and GSM 900/1800, firmware
 ``A011B15A7682M7``) is not registered for voice over LTE (``+CIREG: 1,0``,
 ``+CAVIMS: 0``; the IMS context, cid 8, is deactivated by the modem at
-start), so a call must fall back to GSM.  With ``AT+CEMODE=2`` it does,
+start): activating it by hand gets ``+CME ERROR: requested service option
+not subscribed (#33)`` from the network, whatever the APN (``IMS``,
+``ims``) and address type, so Orange doesn't allow IMS for this line or
+device.  A call must fall back to GSM.  With ``AT+CEMODE=2`` it does,
 and the modem switches off about 4.7 s after dialling, at the moment it
 leaves LTE: its USB device (see below) drops off the bus and doesn't come
 back, and the board's draw falls to that of an idle board, so it is off,
