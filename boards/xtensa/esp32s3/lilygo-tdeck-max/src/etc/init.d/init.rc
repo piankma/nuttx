@@ -71,6 +71,11 @@ service dbd dbd
    restart_period 1000
 #endif
 
+#ifdef CONFIG_PNUT_PKGD
+service pkgd pkgd
+   restart_period 1000
+#endif
+
 #ifdef CONFIG_PNUT_APPD
 service appd appd
    restart_period 1000
@@ -144,6 +149,9 @@ on init
 #endif
 #ifdef CONFIG_PNUT_LORAD
    start lorad
+#endif
+#ifdef CONFIG_PNUT_PKGD
+   start pkgd
 #endif
 #ifdef CONFIG_PNUT_APPD
    start appd
