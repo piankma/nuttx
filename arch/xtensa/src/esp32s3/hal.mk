@@ -410,6 +410,12 @@ endif
 
 CFLAGS += ${DEFINE_PREFIX}ESP_PLATFORM=1
 
+# The HAL still uses ATOMIC_VAR_INIT(), which C23 (GCC 15's default)
+# dropped: esp_hal_atomic.h defines it where the compiler does not
+
+chip$(DELIM)$(ESP_HAL_3RDPARTY_REPO)$(DELIM)components$(DELIM)%$(OBJEXT): \
+  CFLAGS += -include $(ARCH_SRCDIR)$(DELIM)common$(DELIM)espressif$(DELIM)esp_hal_atomic.h
+
 # The HAL's sdkconfig.h for this chip leaves its power management out.
 # Dynamic frequency scaling needs it: esp_pm_impl_init() then runs among the
 # startup functions, and esp_pm_configure() does its job.
