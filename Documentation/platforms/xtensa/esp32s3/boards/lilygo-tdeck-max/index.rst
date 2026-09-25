@@ -746,7 +746,11 @@ registers on LTE at -51 dBm, and the network's time sets the device clock
 (``AT+CTZU=1``, ``AT+CCLK?``).  The modem refuses caller ID (``AT+CLIP=1``)
 until the SIM has loaded, which it announces with ``PB DONE``.
 
-SMS work both ways.  This modem refuses ``AT+CMGS`` (plain ``ERROR``) with
+SMS work both ways, as long as the modem attaches to the circuit-switched
+domain too (``AT+CEMODE=2``, combined attach; kept across power cycles):
+with ``AT+CEMODE=0`` (LTE for data only) and no IMS, sending fails with
+``+CMS ERROR: Network timeout`` and incoming messages wait in the
+network.  This modem refuses ``AT+CMGS`` (plain ``ERROR``) with
 the UCS2 character set and the GSM 7-bit data coding together; a GSM text
 has to be sent with ``AT+CSCS="IRA"``, and the number given plain rather
 than as UCS-2 hex.  A sender that is a name (``Orange info``) is reported
@@ -758,10 +762,24 @@ goes to voicemail, and one from it stays at dialling.  The module
 (A7682E: LTE-FDD B1/B3/B5/B7/B8/B20 and GSM 900/1800, firmware
 ``A011B15A7682M7``) is not registered for voice over LTE (``+CIREG: 1,0``,
 ``+CAVIMS: 0``; the IMS context, cid 8, is deactivated by the modem at
-start), so a call must fall back to GSM.  Set to GSM only
+start), so a call must fall back to GSM.  With ``AT+CEMODE=2`` it does,
+and the modem switches off about 4.7 s after dialling, at the moment it
+leaves LTE: its USB device (see below) drops off the bus and doesn't come
+back, and the board's draw falls to that of an idle board, so it is off,
+not hung.  A 100 ms PWRKEY press starts it again.  A brownout on the
+GSM transmit bursts (up to 2 A) is the likely cause; the modem's own
+undervoltage power-off is disabled (``+CPMVT``) and it reads 4.2 V at
+idle.  Set to GSM only
 (``AT+CNMP=13``) it found no GSM network in several minutes, then stopped
 answering AT commands; the mode survives power cycles, so it took a
 restart that sets ``AT+CNMP=2`` first thing to recover.
+
+The modem's own USB port (VBUS, D+, D-, GND on test pads, a connector
+soldered on) gives a computer three serial ports: ``ttyUSB1`` and
+``ttyUSB2`` take AT commands, ``ttyUSB0`` is probably the diagnostic
+port.  The workspace's ``scripts/modemat.py`` sends commands there;
+pnut-os's setting ``org.pnut.modem.hold`` keeps modemd off the modem
+meanwhile.  USB doesn't power the modem.
 
 Verified without a SIM card: the modem answers, identifies itself
 (``A7682E``, firmware ``A7682M7_V1.11.1``, its IMEI), reports the strongest
