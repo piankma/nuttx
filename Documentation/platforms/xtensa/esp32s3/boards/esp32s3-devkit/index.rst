@@ -795,6 +795,22 @@ qemu_toywasm
 Based on ``qemu_debug`` defconfig, with the addition of WebAssembly support.
 See :ref:`toywasm` for more further details.
 
+qemu_wamr
+---------
+
+Based on ``qemu_debug`` defconfig, with the WebAssembly Micro Runtime
+(WAMR) instead: its fast interpreter, WASI's libc, reference types and
+bulk memory, which modules from recent WASI SDKs need, and ahead-of-time
+modules.  With semihosting, a directory of the host's can be mounted and
+a module run from it::
+
+    nsh> mount -t hostfs -o fs=/path/on/host /host
+    nsh> cp /host/hello.wasm /tmp/hello.wasm
+    nsh> iwasm /tmp/hello.wasm
+
+Copy a module to ``/tmp`` first: the semihosting file system reads files
+but cannot report their size, which WAMR's loader asks for.
+
 random
 ------
 

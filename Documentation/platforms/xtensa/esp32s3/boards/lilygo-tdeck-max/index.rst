@@ -113,20 +113,31 @@ The 16 MB flash is divided as follows (``full`` configuration):
 ===================== ======= ================================================
 Range                 Size    Use
 ===================== ======= ================================================
-0x000000 - 0x3FFFFF   4 MB    Firmware (it boots from address 0, ~1.2 MB)
+0x000000 - 0x3FFFFF   4 MB    Firmware (it boots from address 0, ~2.1 MB)
 0x400000 - 0x7FFFFF   4 MB    Reserved for a second firmware slot (updates)
 0x800000 - 0xEFFFFF   7 MB    ``/opt``: littlefs for installed apps
-0xF00000 - 0xFFFFFF   1 MB    ``/data``: littlefs for settings, keys, contacts
+0xF00000 - 0xFFFFFF   1 MB    ``/var/lib``: littlefs for settings and state
 ===================== ======= ================================================
 
-``/data`` (``ESP32S3_SPIFLASH_LITTLEFS``, ``ESP32S3_STORAGE_MTD_OFFSET`` and
-``_SIZE``) is formatted on first use and survives reflashing, since
-``make flash`` only writes the firmware.  It sits in the last megabyte so
-that it stays put whatever boot scheme the firmware slots end up using.
+The settings partition (``ESP32S3_SPIFLASH_LITTLEFS``,
+``ESP32S3_STORAGE_MTD_OFFSET`` and ``_SIZE``) is formatted on first use and
+survives reflashing, since ``make flash`` only writes the firmware.  It
+sits in the last megabyte so that it stays put whatever boot scheme the
+firmware slots end up using.  ``full`` mounts it at ``/var/lib``
+(``ESP32S3_SPIFLASH_MOUNTPT``, an option of the ESP32-S3 boards' common
+code, which mounted it at ``/data`` before and still does by default):
+``/var`` itself is the pseudo-filesystem's, with the local sockets in
+``/var/run``, so the partition can't be mounted at ``/var``.  Until
+2026-09-25 it was at ``/data``; pnut-os's ``pnut migrate``, which
+``init.rc`` runs before the daemons, moved the old layout's directories
+once.
 
 ``/opt`` (``LILYGO_TDECK_MAX_OPT``, ``_OFFSET`` and ``_SIZE``) is where
 pnut-os installs apps.  The board registers it as ``/dev/opt`` and mounts
 it at boot; it too is formatted on first use and survives reflashing.
+
+The image is 2.10 MiB with pnut-os, SQLite (358 KB) and WAMR (89 KB), so
+the second slot could not shrink to 2 MB; the slots stay at 4 MB.
 
 Pin map
 =======
@@ -245,8 +256,9 @@ This is the configuration to use on the device itself; ``nsh`` stays as the
 minimal one to fall back to when something needs to be bisected.
 
 At boot ``full`` also mounts the microSD card at ``/mnt/sd`` (when there is
-one), mounts the ``/data`` settings partition (see Flash layout), and keeps
-the system log in a 4 KB RAM buffer as well as on the console, so that
+one), mounts the settings partition at ``/var/lib`` and ``/opt`` (see
+Flash layout), and keeps the system log in a 64 KB RAM buffer as well as
+on the console, so that
 ``dmesg`` shows messages from before anyone attached.  The RAM log lives at
 ``/dev/kmsg``: ``CONFIG_SYSLOG_DEVPATH`` defaulted to ``/dev/ttyS1``, the
 modem's UART, where the RAM log could not register and ``dmesg`` then waited
@@ -257,9 +269,11 @@ tree as ``apps/external``), ``init.rc`` starts its daemons before the shell
 and restarts one that exits: ``svcd`` (the registry), ``cfgd`` (settings),
 ``notifyd`` (notifications), ``logd`` (the kept log), ``sysd`` (battery,
 clock, backlights), ``modemd`` (the modem), ``msgd`` (messages, in SQLite),
-``dbd`` (apps' databases), ``lorad`` (the LoRa radio) and ``meshd`` (the
-LoRa mesh).  They own the hardware they drive; ``pnut`` is their
-command-line client.  After them it starts ``shell``, the user interface on
+``dbd`` (apps' databases), ``lorad`` (the LoRa radio), ``pkgd`` (apps'
+packages and permissions), ``appd`` (runs WebAssembly apps, see Apps
+below) and ``meshd`` (chooses the LoRa mesh network, whose protocol is an
+app).  They own the hardware they drive; ``pnut`` is their command-line
+client, and ``pnut migrate`` runs before them all.  After them it starts ``shell``, the user interface on
 the panel (see User interface below).
 
 The panel is a GoodDisplay GDEQ031T10, a 3.1 inch 240x320 monochrome panel
@@ -899,7 +913,7 @@ what matters for the board:
 * The touch panel reports the whole glass: taps at the bottom edge came in
   at y = 317-319 and at the right at x = 235-238, so the softkey bar needs
   no margin.
-* Themes (colours, fonts, metrics) are files in ``/data/themes`` or on the
+* Themes (colours, fonts, metrics) are files in ``/var/lib/pnut/themes`` or on the
   SD card, and fonts in them load through LVGL's POSIX drive, so the
   ``full`` configuration has ``LV_USE_FS_POSIX`` on letter A.  After
   changing any ``LV_`` option, delete LVGL's objects: its build does not
@@ -950,7 +964,7 @@ how it is used.
   hanging.  ``board_reset()`` writes the PSRAM data cache back first
   (``Cache_WriteBack_All``, from ROM), so the panic's dump is in the RAM
   log at the next boot, where logd saves it as a crash report.
-* ``/var/log`` is a pseudo-filesystem soft link to ``/data/log``
+* ``/var/log`` is a pseudo-filesystem soft link to ``/var/lib/log``
   (``FS_LINKS``).  A soft link into a mounted volume used to lose the
   rest of the path: opening ``/var/log/system.log`` opened the directory.
   ``inode_search()`` kept that rest as a pointer into its buffer, which
@@ -960,7 +974,7 @@ how it is used.
 * **adb** (``SYSTEM_ADBD``, microADB with libuv) runs over TCP, port 5555,
   with shell, file and logcat services; pnut-os's sysd starts it when the
   setting ``dev.adb`` is on.  Only computers whose keys are in
-  ``/data/adb/adb_keys`` connect: microADB's own key check was a stub
+  ``/var/lib/adb/adb_keys`` (``ADBD_AUTH_KEYS``) connect: microADB's own key check was a stub
   that accepted everyone, and ``apps/system/adb/adb_auth.c`` now verifies
   the RSA signature.  ``/dev/urandom`` comes from the hardware RNG
   (``DEV_URANDOM_ARCH``) for adb's tokens.  USB adb is not set up: the
@@ -980,6 +994,34 @@ how it is used.
   daemon.
 * Ctrl-C on the USB console interrupts the running command
   (``TTY_SIGINT``).
+
+Apps (WebAssembly)
+==================
+
+pnut-os runs apps as WebAssembly modules, in WAMR 2.1.0
+(``INTERPRETERS_WAMR``): the fast interpreter, WASI's libc, reference types
+and bulk memory (``INTERPRETERS_WAMR_FAST``, ``_LIBC_WASI``, ``_REF_TYPES``,
+``_BULK_MEMORY``; modules from the WASI SDK 34 use both), without the
+``iwasm`` task (pnut-os's ``appd`` embeds the runtime).  The MeshCore and
+Meshtastic protocols are two such apps, built into the image.
+
+* **Each app is a task named by its reverse-DNS id**
+  (``org.meshcore.companion``), which is how the daemons tell who calls.
+  procfs's ``status`` file cut task names to 18 characters, so the id came
+  out as ``org.meshcore.comp`` and the app was refused;
+  ``fs/procfs/fs_procfsproc.c`` now prints the whole name.
+* **Costs:** WAMR adds 89 KB to the image, a mesh app's module is about
+  20 KB, and a running app with 128 KB of linear memory takes 160 KB of
+  PSRAM and 1 KB of internal RAM.  Interpreted code is slow (1.4 ms for
+  FNV-1a over 1 KB), but the protocols' crypto is native: decoding a
+  157-byte Meshtastic packet takes 1.4 ms.
+* **No AOT** yet: ``wamrc`` needs an LLVM with the Xtensa target.
+* **QEMU:** ``esp32s3-devkit:qemu_wamr`` runs WAMR on Espressif's QEMU
+  (``qemu-system-xtensa -M esp32s3``, their fork: Debian's has no ESP32-S3
+  machine), which is where it was brought up.  Building the ESP32-S3 HAL
+  with GCC 15 needed ``ATOMIC_VAR_INIT``, which C23 removed; it is
+  defined again for the HAL's objects
+  (``arch/xtensa/src/common/espressif/esp_hal_atomic.h``).
 
 On-device terminal
 ==================
@@ -1075,7 +1117,7 @@ Verified on hardware (2026-09-20/21):
   so creating and looking up could decide differently.  Fixed in
   ``fs/fat/fs_fat32dirent.c``; the lost entries could then be removed.
 * SQLite (``LIB_SQLITE``, the small build) runs on the card and on the
-  ``/data`` littlefs with a rollback journal; its file locks need
+  settings partition's littlefs with a rollback journal; its file locks need
   ``FS_LOCK_BUCKET_SIZE``.  pnut-os keeps its messages in it
   (``/mnt/sd/pnut/messages.db``) and gives apps their own databases (dbd).
   It adds 377 KB to the image, which is now 2.0 MB.  The apps tree's
