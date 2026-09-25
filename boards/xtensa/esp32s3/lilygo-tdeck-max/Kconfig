@@ -143,4 +143,25 @@ config LILYGO_TDECK_MAX_BOOT_TERMINAL
 		until the next reset: nxterm does not tidy up after its shell, so
 		it cannot simply be restarted.
 
+config LILYGO_TDECK_MAX_OPT
+	bool "Mount /opt, the flash for installed apps"
+	default n
+	depends on ESP32S3_SPIFLASH && ESP32S3_SPIFLASH_LITTLEFS
+	---help---
+		A littlefs in the flash between the second firmware slot and
+		/data, mounted at /opt: where pnut-os's pkgd installs apps.  It
+		is formatted on first use.
+
+if LILYGO_TDECK_MAX_OPT
+
+config LILYGO_TDECK_MAX_OPT_OFFSET
+	hex "/opt's offset in the flash"
+	default 0x800000
+
+config LILYGO_TDECK_MAX_OPT_SIZE
+	hex "/opt's size"
+	default 0x700000
+
+endif
+
 endif # ARCH_BOARD_LILYGO_TDECK_MAX

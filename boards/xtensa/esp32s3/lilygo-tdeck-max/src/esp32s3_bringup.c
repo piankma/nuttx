@@ -31,6 +31,7 @@
 
 #include <nuttx/debug.h>
 #include <nuttx/fs/fs.h>
+#include <nuttx/mtd/mtd.h>
 #include <arch/board/board.h>
 
 #ifdef CONFIG_ESPRESSIF_HR_TIMER
@@ -61,7 +62,48 @@
 #  include "esp32s3_sleep.h"
 #endif
 
+#ifdef CONFIG_LILYGO_TDECK_MAX_OPT
+#  include "esp32s3_spiflash_mtd.h"
+#endif
+
 #include "lilygo-tdeck-max.h"
+
+/****************************************************************************
+ * Private Functions
+ ****************************************************************************/
+
+/* /opt: the installed apps' partition (LILYGO_TDECK_MAX_OPT_*) */
+
+#ifdef CONFIG_LILYGO_TDECK_MAX_OPT
+static int board_opt_init(void)
+{
+  FAR struct mtd_dev_s *mtd;
+  int ret;
+
+  mtd = esp32s3_spiflash_alloc_mtdpart(CONFIG_LILYGO_TDECK_MAX_OPT_OFFSET,
+                                       CONFIG_LILYGO_TDECK_MAX_OPT_SIZE,
+                                       false);
+  if (mtd == NULL)
+    {
+      return -ENOMEM;
+    }
+
+  ret = register_mtddriver("/dev/opt", mtd, 0755, NULL);
+  if (ret < 0)
+    {
+      return ret;
+    }
+
+  ret = nx_mount("/dev/opt", "/opt", "littlefs", 0, NULL);
+  if (ret < 0)
+    {
+      syslog(LOG_WARNING, "/opt: formatting (%d)\n", ret);
+      ret = nx_mount("/dev/opt", "/opt", "littlefs", 0, "forceformat");
+    }
+
+  return ret;
+}
+#endif
 
 /****************************************************************************
  * Public Functions
@@ -132,6 +174,18 @@ int esp32s3_bringup(void)
   if (ret < 0)
     {
       syslog(LOG_ERR, "ERROR: Failed to mount /data: %d\n", ret);
+    }
+#endif
+
+#ifdef CONFIG_LILYGO_TDECK_MAX_OPT
+  /* /opt, the installed apps: the flash between the second firmware slot
+   * and /data, a littlefs formatted on first use
+   */
+
+  ret = board_opt_init();
+  if (ret < 0)
+    {
+      syslog(LOG_ERR, "ERROR: Failed to mount /opt: %d\n", ret);
     }
 #endif
 

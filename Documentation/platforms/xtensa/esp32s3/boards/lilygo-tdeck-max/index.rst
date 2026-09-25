@@ -115,7 +115,7 @@ Range                 Size    Use
 ===================== ======= ================================================
 0x000000 - 0x3FFFFF   4 MB    Firmware (it boots from address 0, ~1.2 MB)
 0x400000 - 0x7FFFFF   4 MB    Reserved for a second firmware slot (updates)
-0x800000 - 0xEFFFFF   7 MB    Not allocated
+0x800000 - 0xEFFFFF   7 MB    ``/opt``: littlefs for installed apps
 0xF00000 - 0xFFFFFF   1 MB    ``/data``: littlefs for settings, keys, contacts
 ===================== ======= ================================================
 
@@ -123,6 +123,10 @@ Range                 Size    Use
 ``_SIZE``) is formatted on first use and survives reflashing, since
 ``make flash`` only writes the firmware.  It sits in the last megabyte so
 that it stays put whatever boot scheme the firmware slots end up using.
+
+``/opt`` (``LILYGO_TDECK_MAX_OPT``, ``_OFFSET`` and ``_SIZE``) is where
+pnut-os installs apps.  The board registers it as ``/dev/opt`` and mounts
+it at boot; it too is formatted on first use and survives reflashing.
 
 Pin map
 =======
