@@ -250,10 +250,16 @@ full
 
 Everything the board can currently do at once: the e-paper panel, both
 backlights, the keyboard, Wi-Fi and Bluetooth LE, the pnut-os system layer
-and its user interface on the panel, with the ``fb``, ``pwm``, ``kbd`` and
-``nxterm`` examples.
+and its user interface on the panel.
 This is the configuration to use on the device itself; ``nsh`` stays as the
 minimal one to fall back to when something needs to be bisected.
+
+The examples used below to try the hardware (``fb``, ``pwm``, ``kbd``,
+``haptic``, ``tc``, ``lora``, ``gps`` and ``nxterm``) were taken out of
+``full`` on 2026-09-25, as pnut-os's daemons drive that hardware now.
+Enable the matching ``EXAMPLES_*`` option to use one again (``nxterm``
+also needs ``NX`` and ``NXTERM``).  ``gpio`` stays: it switches the radios
+and the LoRa antenna.
 
 At boot ``full`` also mounts the microSD card at ``/mnt/sd`` (when there is
 one), mounts the settings partition at ``/var/lib`` and ``/opt`` (see
@@ -1029,9 +1035,10 @@ On-device terminal
 The panel and the keyboard can also form a terminal running NSH, so the
 device can be used without a computer; it is independent of the USB
 console, which keeps its own shell.  In ``full`` it no longer starts at
-boot, because the pnut-os shell owns the panel: to get it back, disable
-``PNUT_SHELL`` and enable ``LILYGO_TDECK_MAX_BOOT_TERMINAL``, or run
-``nxterm`` from the USB console in a build without the shell.  The two
+boot, because the pnut-os shell owns the panel, and it isn't built: to get
+it back, disable ``PNUT_SHELL`` and enable ``EXAMPLES_NXTERM`` (with ``NX``
+and ``NXTERM``) and ``LILYGO_TDECK_MAX_BOOT_TERMINAL``, or run ``nxterm``
+from the USB console in such a build.  The two
 cannot share the panel.
 
 ``nxterm`` (``apps/examples/nxterm``) draws the text through NX onto
