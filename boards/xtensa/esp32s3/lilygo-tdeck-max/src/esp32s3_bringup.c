@@ -166,20 +166,22 @@ int esp32s3_bringup(void)
 #endif
 
 #ifdef CONFIG_ESP32S3_SPIFLASH
-  /* Mount /data, the settings partition in the last megabyte of the flash
-   * (ESP32S3_STORAGE_MTD_OFFSET/SIZE).  It is formatted on first use.
+  /* Mount the settings partition, the last megabyte of the flash
+   * (ESP32S3_STORAGE_MTD_OFFSET/SIZE), at ESP32S3_SPIFLASH_MOUNTPT
+   * (/var/lib for pnut-os).  It is formatted on first use.
    */
 
   ret = board_spiflash_init();
   if (ret < 0)
     {
-      syslog(LOG_ERR, "ERROR: Failed to mount /data: %d\n", ret);
+      syslog(LOG_ERR, "ERROR: Failed to mount the settings partition: %d\n",
+             ret);
     }
 #endif
 
 #ifdef CONFIG_LILYGO_TDECK_MAX_OPT
   /* /opt, the installed apps: the flash between the second firmware slot
-   * and /data, a littlefs formatted on first use
+   * and the settings partition, a littlefs formatted on first use
    */
 
   ret = board_opt_init();

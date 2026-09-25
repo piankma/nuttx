@@ -149,8 +149,8 @@ config LILYGO_TDECK_MAX_OPT
 	depends on ESP32S3_SPIFLASH && ESP32S3_SPIFLASH_LITTLEFS
 	---help---
 		A littlefs in the flash between the second firmware slot and
-		/data, mounted at /opt: where pnut-os's pkgd installs apps.  It
-		is formatted on first use.
+		the settings partition, mounted at /opt: where pnut-os's pkgd
+		installs apps.  It is formatted on first use.
 
 if LILYGO_TDECK_MAX_OPT
 

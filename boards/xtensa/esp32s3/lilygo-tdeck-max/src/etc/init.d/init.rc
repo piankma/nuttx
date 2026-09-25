@@ -28,7 +28,9 @@
 
 /* pnut-os daemons (the pnut-os repository, built as apps/external).  init
  * restarts one that exits.  svcd, the registry, comes first: the others
- * register with it and wait for each other through it.
+ * register with it and wait for each other through it.  Before them,
+ * "pnut migrate" moves what an older release left in /var/lib (init waits
+ * for it).
  */
 
 #ifdef CONFIG_PNUT_SVCD
@@ -123,6 +125,9 @@ service terminal nxterm
 #endif
 
 on init
+#ifdef CONFIG_PNUT_CLI
+   exec -- pnut migrate
+#endif
 #ifdef CONFIG_PNUT_SVCD
    start svcd
 #endif
