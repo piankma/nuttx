@@ -309,6 +309,13 @@ and ``ifup`` still stop and start the Wi-Fi radio.  ``wifi`` and
 ``blewifi`` bring their radios up at boot instead, through
 ``LILYGO_TDECK_MAX_BOOT_WIFI`` and ``LILYGO_TDECK_MAX_BOOT_BLE``.
 
+In ``full``, pnut-os's ``wifid`` does this when Wi-Fi is switched on in
+Settings (or ``pnut cfg set wifi.power on``).  It joins the network kept in
+the settings, gets an address by DHCP and renews it at half the lease.
+Switching Wi-Fi off takes ``wlan0`` down again.  A scan also brings the
+radio up.  Once it has started, the kernel heap has about 14 KB free of
+160 KB, against 56 KB before.
+
 .. warning::
 
    Bringing radios up at boot needs ``BOARD_INITTHREAD_STACKSIZE`` of at
@@ -1182,7 +1189,10 @@ Verified on hardware (2026-09-20/21):
   WPA2-CCMP station association to a 2.4 GHz hotspot completes: DHCP leases an
   address, ICMP reaches both the gateway and the public internet with no loss,
   DNS resolves, and a TCP connection to a public HTTP server returns a full
-  response.  PSRAM stays available as the user heap.
+  response.  PSRAM stays available as the user heap.  Under pnut-os
+  (2026-09-26), ``wifid`` joins the saved network 4.5 s after boot, and the
+  address, ping, DNS, switching off and on again and the scan in Settings all
+  work.
 * Bluetooth LE: ``bnep0`` registers, the controller reports its address and
   feature pages, scanning decodes real advertisers (including their names),
   and advertising starts.

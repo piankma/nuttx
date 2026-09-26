@@ -93,6 +93,11 @@ service meshd meshd
    restart_period 1000
 #endif
 
+#ifdef CONFIG_PNUT_WIFID
+service wifid wifid
+   restart_period 1000
+#endif
+
 /* pnut-os's user interface, on the e-paper panel */
 
 #ifdef CONFIG_PNUT_SHELL
@@ -163,6 +168,9 @@ on init
 #endif
 #ifdef CONFIG_PNUT_MESHD
    start meshd
+#endif
+#ifdef CONFIG_PNUT_WIFID
+   start wifid
 #endif
 #ifdef CONFIG_PNUT_SHELL
    start shell
