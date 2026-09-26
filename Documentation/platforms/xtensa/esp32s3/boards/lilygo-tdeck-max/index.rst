@@ -1303,9 +1303,12 @@ Not verified:
   points at ``/tmp/wapi.conf`` on tmpfs, because the board has no dedicated
   place to keep them yet; the microSD card or a flash partition would be the
   natural home.
-* BLE advertising is not fully characterised: the first attempt after boot
-  once failed with ``EIO`` (an HCI command timeout) and every attempt since
-  has succeeded, with Wi-Fi both up and down.
+* BLE advertising: the first start after BLE came up failed with ``EIO``
+  every time: the controller answered LE Set Advertising Parameters with
+  Command Disallowed until advertising had been disabled once.  The host
+  now disables it before each start (fixed 2026-09-26); not yet checked
+  with a scanner on air.  In ``full`` BLE is off until ``/dev/ble_en`` is
+  set (``gpio -o 1 /dev/ble_en``, then ``ifup bnep0``).
 * The debug session through the VS Code UI (only OpenOCD and GDB were driven).
 * Charging from a mostly empty cell, and how closely the state of charge
   follows the cell over a full discharge.

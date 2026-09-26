@@ -2110,7 +2110,25 @@ int bt_start_advertising(uint8_t type, FAR const struct bt_eir_s *ad,
   FAR struct bt_hci_cp_le_set_adv_data_s *set_data;
   FAR struct bt_hci_cp_le_set_adv_data_s *scan_rsp;
   FAR struct bt_hci_cp_le_set_adv_parameters_s *set_param;
+  uint8_t disable = 0x00;
   int i;
+
+  /* Advertising off first: the parameters can't change while it is on,
+   * and the ESP32-S3's controller refused them (Command Disallowed) at the
+   * first start after it came up, until advertising had been disabled
+   * once.  Its answer doesn't matter.
+   */
+
+  buf = bt_hci_cmd_create(BT_HCI_OP_LE_SET_ADV_ENABLE, 1);
+  if (buf == NULL)
+    {
+      wlerr("ERROR:  Failed to create buffer\n");
+      return -ENOBUFS;
+    }
+
+  memcpy(bt_buf_extend(buf, 1), &disable, 1);
+  bt_hci_cmd_send_sync(BT_HCI_OP_LE_SET_ADV_ENABLE, buf, NULL);
+  g_btdev.adv_enable = 0x00;
 
   if (ad == NULL)
     {
