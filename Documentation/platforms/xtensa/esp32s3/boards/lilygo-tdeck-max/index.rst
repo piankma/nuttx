@@ -807,8 +807,10 @@ a TUN device.  Three settings matter:
   PPP negotiates 1500, so with the TUN MTU at 1500 small requests worked
   and every bulk transfer stalled at its first full-size segment.  At 1440
   TCP announces an MSS of 1400.
-* ``CONFIG_UART2_RXBUFSIZE=4096``: a full-speed PPP burst from the modem
-  outran the 1 KB receive buffer; the UART has no flow control wired.
+* ``CONFIG_UART2_RXBUFSIZE`` stays 1024: modemd's reader drains it at a
+  high priority.  4 KB was tried while PPP lost bytes, but the loss was
+  elsewhere (pnut-os's pty), and at 1 KB TCP runs as fast; the buffer comes
+  from the kernel heap, which Wi-Fi leaves about 9 KB of.
 * ``CONFIG_NETUTILS_WEBCLIENT``: ``wget`` in NSH, over whichever link is
   up (``wget /mnt/sd/x.html http://example.com/``).
 
