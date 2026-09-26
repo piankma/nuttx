@@ -81,6 +81,11 @@ static spinlock_t g_sleep_lock = SP_UNLOCKED;
 
 static int g_sleep_holds = 1;
 
+/* How often and how long the chip slept, since boot */
+
+static uint32_t g_sleep_count;
+static uint64_t g_sleep_us;
+
 /****************************************************************************
  * Public Functions
  ****************************************************************************/
@@ -141,6 +146,22 @@ void esp32s3_sleep_release(void)
     {
       g_sleep_holds--;
     }
+
+  spin_unlock_irqrestore(&g_sleep_lock, flags);
+}
+
+/****************************************************************************
+ * Name: esp32s3_sleep_stats
+ ****************************************************************************/
+
+void esp32s3_sleep_stats(FAR uint32_t *sleeps, FAR uint64_t *slept_us,
+                         FAR int *holds)
+{
+  irqstate_t flags = spin_lock_irqsave(&g_sleep_lock);
+
+  *sleeps   = g_sleep_count;
+  *slept_us = g_sleep_us;
+  *holds    = g_sleep_holds;
 
   spin_unlock_irqrestore(&g_sleep_lock, flags);
 }
@@ -229,7 +250,10 @@ bool esp32s3_sleep_idle(void)
       esp_sleep_enable_timer_wakeup(sleep_us - ESP32S3_SLEEP_EARLY_US);
     }
 
+  now = esp_timer_get_time();
   esp_light_sleep_start();
+  g_sleep_count++;
+  g_sleep_us += esp_timer_get_time() - now;
 
   /* The counter was moved on by the time slept, measured with the slow
    * RC clock: it can pass the interval timer's alarm, which would then

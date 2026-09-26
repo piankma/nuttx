@@ -30,6 +30,7 @@
 #include <nuttx/config.h>
 
 #include <stdbool.h>
+#include <stdint.h>
 
 #ifdef CONFIG_ESP32S3_AUTO_SLEEP
 
@@ -96,6 +97,18 @@ int esp32s3_sleep_wake_on_gpio(int pin, bool high);
  ****************************************************************************/
 
 int esp32s3_sleep_wake_on_gpio_off(int pin);
+
+/****************************************************************************
+ * Name: esp32s3_sleep_stats
+ *
+ * Description:
+ *   How many times the chip has slept since boot, for how long in all, and
+ *   how many hold it awake now.
+ *
+ ****************************************************************************/
+
+void esp32s3_sleep_stats(FAR uint32_t *sleeps, FAR uint64_t *slept_us,
+                         FAR int *holds);
 
 /****************************************************************************
  * Name: esp32s3_sleep_idle

@@ -51,6 +51,7 @@
 #include <errno.h>
 #include <poll.h>
 #include <stdbool.h>
+#include <stdio.h>
 #include <string.h>
 #include <debug.h>
 
@@ -89,6 +90,8 @@ static int     modem_poll(FAR struct file *filep, FAR struct pollfd *fds,
                           bool setup);
 static int     awake_open(FAR struct file *filep);
 static int     awake_close(FAR struct file *filep);
+static ssize_t awake_read(FAR struct file *filep, FAR char *buffer,
+                          size_t len);
 
 /****************************************************************************
  * Private Data
@@ -107,6 +110,7 @@ static const struct file_operations g_awake_fops =
 {
   .open  = awake_open,
   .close = awake_close,
+  .read  = awake_read,
 };
 
 static mutex_t g_modem_lock = NXMUTEX_INITIALIZER;
@@ -272,6 +276,39 @@ static int awake_close(FAR struct file *filep)
 {
   esp32s3_sleep_release();
   return OK;
+}
+
+/* Reading it says how the chip has slept since boot, and how many hold it
+ * awake now (this reader among them)
+ */
+
+static ssize_t awake_read(FAR struct file *filep, FAR char *buffer,
+                          size_t len)
+{
+  char line[80];
+  uint64_t slept_us;
+  uint32_t sleeps;
+  int holds;
+  int n;
+
+  esp32s3_sleep_stats(&sleeps, &slept_us, &holds);
+  n = snprintf(line, sizeof(line), "holds %d, slept %lu times, %llu ms\n",
+               holds, (unsigned long)sleeps,
+               (unsigned long long)(slept_us / 1000));
+  if (filep->f_pos >= n)
+    {
+      return 0;
+    }
+
+  n -= filep->f_pos;
+  if ((size_t)n > len)
+    {
+      n = len;
+    }
+
+  memcpy(buffer, line + filep->f_pos, n);
+  filep->f_pos += n;
+  return n;
 }
 
 /****************************************************************************
