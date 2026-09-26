@@ -794,9 +794,29 @@ meanwhile.  USB doesn't power the modem.
 Verified without a SIM card: the modem answers, identifies itself
 (``A7682E``, firmware ``A7682M7_V1.11.1``, its IMEI), reports the strongest
 cell it can hear (``+CSQ`` at -67 dBm) and says that no SIM is inserted;
-the terminal, and powering it down and up again, work.  Not yet verified:
-a data connection (PPP is in NuttX as ``NETUTILS_PPPD`` with
-``NETUTILS_CHAT``, and is not configured here yet).
+the terminal, and powering it down and up again, work.
+
+Mobile data works in ``full`` (2026-09-26, Orange Polska, LTE).  pnut-os's
+modemd multiplexes UART2 with 3GPP 27.010 (``AT+CMUX``): one channel keeps
+carrying AT commands, the other runs PPP to NuttX's ``pppd``
+(``NETUTILS_PPPD``) through a pseudo-terminal, and the link is ``ppp0``,
+a TUN device.  Three settings matter:
+
+* ``CONFIG_NET_TUN_PKTSIZE=1440``: the operator's path drops IP packets
+  over 1480 bytes (a 1480-byte ping packet gets through, 1484 doesn't), while
+  PPP negotiates 1500, so with the TUN MTU at 1500 small requests worked
+  and every bulk transfer stalled at its first full-size segment.  At 1440
+  TCP announces an MSS of 1400.
+* ``CONFIG_UART2_RXBUFSIZE=4096``: a full-speed PPP burst from the modem
+  outran the 1 KB receive buffer; the UART has no flow control wired.
+* ``CONFIG_NETUTILS_WEBCLIENT``: ``wget`` in NSH, over whichever link is
+  up (``wget /mnt/sd/x.html http://example.com/``).
+
+Throughput over HTTP is 70 to 80 kbit/s each way (100 KB up and down,
+repeatable) and 42 kbit/s from ``speedtest.tele2.net`` (1 MB); the UART at
+115200 baud caps it at about 92 kbit/s.  The DNS servers come from the
+network in IPCP.  ``ppp0`` has a host netmask, so with Wi-Fi up as well,
+Wi-Fi carries the traffic.
 
 .. warning::
 
@@ -1205,6 +1225,9 @@ Verified on hardware (2026-09-20/21):
 * Modem: it answers AT commands on UART2 and identifies itself, reports
   the cell it hears and that no SIM is inserted, and powers up and down
   through ``modem on``/``modem off`` (see Modem).
+* Mobile data under pnut-os (2026-09-26): PPP over the multiplexed UART,
+  DNS, HTTP downloads of 100 KB and 1 MB and uploads of 100 KB with no
+  stalls over repeated runs, and ``wget`` to the SD card (see Modem).
 * JTAG: OpenOCD and GDB over the USB Serial/JTAG unit, with a breakpoint,
   backtrace, memory reads and ``finish`` inside the board bring-up code.
 * Wi-Fi: ``wlan0`` registers, scanning returns real access points, and a
