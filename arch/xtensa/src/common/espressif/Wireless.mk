@@ -149,7 +149,7 @@ VPATH += chip$(DELIM)$(ESP_HAL_3RDPARTY_REPO)$(DELIM)components$(DELIM)mbedtls$(
 CHIP_CSRCS += esp_psa_crypto_init.c
 
 CHIP_CSRCS += esp_hardware.c
-CHIP_CSRCS += esp_mem.c
+CHIP_CSRCS += esp_mbedtls_mem.c
 CHIP_CSRCS += esp_timing.c
 
 # Ensure PSA crypto initialization is included in the build
