@@ -22,6 +22,18 @@ config LILYGO_TDECK_MAX_POWERKEY
 		keyboard, /dev/kbd2, reporting KEYCODE_POWER.  The other side
 		button, S1, resets the chip.
 
+config LILYGO_TDECK_MAX_MODEM_SLEEP
+	bool "Light sleep with the modem on (RI, DTR, /dev/awake)"
+	default n
+	depends on ESP32S3_AUTO_SLEEP && ESPRESSIF_GPIO_IRQ && SCHED_LPWORK
+	---help---
+		Let the chip sleep while the modem is on: the modem's ring
+		indicator (GPIO7) wakes it, /dev/modem_sleep counts the pulses
+		and drives DTR (GPIO8, for the modem's own sleep), and
+		/dev/awake keeps the chip awake while it is open, for modemd to
+		hold while it talks to the modem.  Without it the chip stays
+		awake whenever the modem's rail is on.
+
 config LILYGO_TDECK_MAX_TCA8418_FREQUENCY
 	int "TCA8418 I2C frequency (Hz)"
 	default 400000

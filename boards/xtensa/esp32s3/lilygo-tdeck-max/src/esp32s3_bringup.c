@@ -347,6 +347,19 @@ int esp32s3_bringup(void)
     }
 #endif
 
+#ifdef CONFIG_LILYGO_TDECK_MAX_MODEM_SLEEP
+  /* /dev/modem_sleep (RI and DTR) and /dev/awake, before the modem rail
+   * can be switched on
+   */
+
+  ret = tdeckmax_modem_initialize();
+  if (ret < 0)
+    {
+      syslog(LOG_ERR, "ERROR: Failed to initialize modem sleep: %d\n",
+             ret);
+    }
+#endif
+
 #ifdef CONFIG_LILYGO_TDECK_MAX_POWERKEY
   /* Register /dev/kbd2, the side button as a power key */
 

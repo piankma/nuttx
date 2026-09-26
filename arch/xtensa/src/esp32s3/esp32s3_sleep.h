@@ -88,6 +88,16 @@ void esp32s3_sleep_release(void);
 int esp32s3_sleep_wake_on_gpio(int pin, bool high);
 
 /****************************************************************************
+ * Name: esp32s3_sleep_wake_on_gpio_off
+ *
+ * Description:
+ *   No longer wake the chip from light sleep on the pin.
+ *
+ ****************************************************************************/
+
+int esp32s3_sleep_wake_on_gpio_off(int pin);
+
+/****************************************************************************
  * Name: esp32s3_sleep_idle
  *
  * Description:

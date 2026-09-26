@@ -105,6 +105,9 @@ struct xl9555_rail_s
  ****************************************************************************/
 
 static void tdeckmax_lora_rail(bool on);
+#ifdef CONFIG_LILYGO_TDECK_MAX_MODEM_SLEEP
+static void tdeckmax_modem_rail(bool on);
+#endif
 static void tdeckmax_gps_rail(bool on);
 static void tdeckmax_rail_changed(FAR struct xl9555_rail_s *rail, bool on);
 
@@ -131,7 +134,15 @@ static int  tdeckmax_rail_setpintype(FAR struct gpio_dev_s *dev,
 
 static struct xl9555_pin_s g_xl9555_pins[] =
 {
+#ifdef CONFIG_LILYGO_TDECK_MAX_MODEM_SLEEP
+  /* The chip may sleep with the modem on: RI wakes it, and modemd keeps
+   * it awake while it talks to the modem (esp32s3_modem.c)
+   */
+
+  { XL9555_PIN_MODEM_PWR,    "modem_pwr",    false, tdeckmax_modem_rail },
+#else
   { XL9555_PIN_MODEM_PWR,    "modem_pwr",    false, NULL, true },
+#endif
   { XL9555_PIN_LORA_EN,      "lora_en",      LORA_BOOT_LEVEL,
     tdeckmax_lora_rail },
   { XL9555_PIN_GPS_EN,       "gps_en",       GPS_BOOT_LEVEL,
@@ -186,6 +197,13 @@ static int g_nrails;
  *   boots.
  *
  ****************************************************************************/
+
+#ifdef CONFIG_LILYGO_TDECK_MAX_MODEM_SLEEP
+static void tdeckmax_modem_rail(bool on)
+{
+  tdeckmax_modem_listen(on);
+}
+#endif
 
 static void tdeckmax_lora_rail(bool on)
 {

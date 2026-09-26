@@ -308,6 +308,20 @@ int tdeckmax_touch_initialize(void);
 #endif
 
 /****************************************************************************
+ * Name: tdeckmax_modem_initialize
+ *
+ * Description:
+ *   The modem's RI and DTR lines for sleeping with the modem on:
+ *   /dev/modem_sleep and /dev/awake (src/esp32s3_modem.c).
+ *
+ ****************************************************************************/
+
+#ifdef CONFIG_LILYGO_TDECK_MAX_MODEM_SLEEP
+int tdeckmax_modem_initialize(void);
+void tdeckmax_modem_listen(bool on);
+#endif
+
+/****************************************************************************
  * Name: tdeckmax_powerkey_initialize
  *
  * Description:

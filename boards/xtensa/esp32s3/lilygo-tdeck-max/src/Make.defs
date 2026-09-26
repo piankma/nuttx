@@ -61,6 +61,10 @@ ifeq ($(CONFIG_LILYGO_TDECK_MAX_POWERKEY),y)
 CSRCS += esp32s3_powerkey.c
 endif
 
+ifeq ($(CONFIG_LILYGO_TDECK_MAX_MODEM_SLEEP),y)
+CSRCS += esp32s3_modem.c
+endif
+
 ifeq ($(CONFIG_ESPRESSIF_WIRELESS),y)
 CSRCS += esp32s3_radios.c
 endif

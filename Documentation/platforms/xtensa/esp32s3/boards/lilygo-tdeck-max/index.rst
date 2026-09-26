@@ -824,7 +824,9 @@ stays awake.  It drew 98 mA before these changes:
   The chip is held awake while USB power is present (the charger's power
   good status, checked every 2 s), while a backlight is on, while the GPS,
   modem or audio amplifier rail is on, and once Wi-Fi or BLE has been
-  brought up.  Without USB power the USB Serial/JTAG port is disconnected.
+  brought up.  With ``LILYGO_TDECK_MAX_MODEM_SLEEP`` (on in ``full``),
+  the modem's rail no longer holds the chip; see "Sleeping with the
+  modem on" below.  Without USB power the USB Serial/JTAG port is disconnected.
   The I2C driver, and the SPI driver's DMA transfers, also hold it awake
   for each transfer: the controller stops in light sleep and its interrupt
   does not wake the chip, so each I2C message used to wait for the next
@@ -832,6 +834,26 @@ stays awake.  It drew 98 mA before these changes:
   as well (``ESP32S3_AUTO_SLEEP_CPU_PD``), the idle chip wakes only for the
   USB power check every 2 s.
 
+* **Sleeping with the modem on** (``LILYGO_TDECK_MAX_MODEM_SLEEP``,
+  ``src/esp32s3_modem.c``). The UART stops in light sleep, so the
+  modem's ring indicator (RI, GPIO7, active low) is a light-sleep wake
+  source. Each pulse holds the chip awake for 2 s and is counted in
+  ``/dev/modem_sleep``, which pnut-os's modemd polls to ask the modem
+  what happened (``AT+CLCC``, the SMS on the SIM). Writing ``1`` or ``0``
+  to it drives DTR (GPIO8) for the modem's own sleep (``AT+CSCLK=1``).
+  ``/dev/awake`` keeps the chip awake while it is open: modemd holds it
+  during each AT command, and all the time unless its setting
+  ``modem.sleep`` allows sleeping. RI reads low while the modem is off
+  (the level shifter takes its supply from the modem), so it is listened
+  to only while the rail is on.
+
+  Measured on battery with the modem idle on LTE (2026-09-26): 57 mA
+  with the chip sleeping between commands, 57.5 mA with it awake. The
+  modem draws nearly all of it. The modem's own sleep could not be
+  measured on this bench: its USB lead was plugged into a PC, and SIMCom
+  modems don't sleep with USB attached. Woken by DTR there, it didn't
+  answer for over a second. With ``AT+CFGRI=1`` RI pulses at the modem's
+  start-up messages, but not for registration changes.
 * The scheduler no longer leaves the round-robin timeslice timer running
   after a round-robin task (every task, by default) goes back to waiting,
   which woke the CPU once for nothing after each task wake-up.  With the
