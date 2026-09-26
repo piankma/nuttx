@@ -867,13 +867,19 @@ stays awake.  It drew 98 mA before these changes:
   (the level shifter takes its supply from the modem), so it is listened
   to only while the rail is on.
 
-  Measured on battery with the modem idle on LTE (2026-09-26): 57 mA
-  with the chip sleeping between commands, 57.5 mA with it awake. The
-  modem draws nearly all of it. The modem's own sleep could not be
-  measured on this bench: its USB lead was plugged into a PC, and SIMCom
-  modems don't sleep with USB attached. Woken by DTR there, it didn't
-  answer for over a second. With ``AT+CFGRI=1`` RI pulses at the modem's
-  start-up messages, but not for registration changes.
+  Measured on battery with the modem idle on LTE and its USB lead
+  unplugged (2026-09-26): about 48 mA with the chip sleeping between
+  commands, and 18 to 20 mA with the modem sleeping too (``AT+CSCLK=1``,
+  DTR high). With its USB attached the modem doesn't sleep. But the link
+  isn't reliable yet while the chip sleeps: the modem misses commands for
+  a second or more at a time (no echo, no answer, though it draws what an
+  awake modem draws), and with its own sleep on it misses most of them.
+  It never happens with the chip awake. The chip's UART2 registers look
+  right during a miss (crystal clock, 115200 baud, the command sent,
+  nothing received). The modem wakes when DTR falls, but misses a fall
+  that comes while it is still falling asleep. With ``AT+CFGRI=1`` RI
+  pulses at the modem's start-up messages, but not for registration
+  changes.
 * The scheduler no longer leaves the round-robin timeslice timer running
   after a round-robin task (every task, by default) goes back to waiting,
   which woke the CPU once for nothing after each task wake-up.  With the
