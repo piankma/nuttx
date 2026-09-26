@@ -1047,6 +1047,14 @@ how it is used.
   hanging.  ``board_reset()`` writes the PSRAM data cache back first
   (``Cache_WriteBack_All``, from ROM), so the panic's dump is in the RAM
   log at the next boot, where logd saves it as a crash report.
+* **Why it reset** (``BOARDCTL_RESET_CAUSE``, 2026-09-26):
+  ``boardctl(BOARDIOC_RESET_CAUSE)`` gives the ROM's reason, mapped to
+  NuttX's causes (power on, watchdogs, brown-out, the USB Serial/JTAG
+  unit's reset from esptool as a pin reset).  For a software reset the flag
+  is the status ``board_reset()`` was given, kept over the reset in a note
+  in ``.ext_ram.noinit``: ``BOARD_ASSERT_RESET_VALUE`` after a panic, 0
+  after ``reboot``.  pnut-os counts crashes at start with it
+  (``pnut boot``): after three in a row it starts without its services.
 * ``/var/log`` is a pseudo-filesystem soft link to ``/var/lib/log``
   (``FS_LINKS``).  A soft link into a mounted volume used to lose the
   rest of the path: opening ``/var/log/system.log`` opened the directory.

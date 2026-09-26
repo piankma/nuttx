@@ -101,6 +101,17 @@ int board_i2c_init(void);
 int tdeckmax_xl9555_initialize(void);
 
 /****************************************************************************
+ * Name: tdeckmax_reset_latch
+ *
+ * Description:
+ *   Take the note board_reset() left before the last reset (esp32s3_reset.c)
+ *   for board_reset_cause(), and clear it.  Called once, early at boot.
+ *
+ ****************************************************************************/
+
+void tdeckmax_reset_latch(void);
+
+/****************************************************************************
  * Name: tdeckmax_xl9555_get
  *
  * Description:

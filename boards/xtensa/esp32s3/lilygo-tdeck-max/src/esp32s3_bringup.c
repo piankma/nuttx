@@ -124,6 +124,10 @@ int esp32s3_bringup(void)
 {
   int ret;
 
+#ifdef CONFIG_BOARDCTL_RESET
+  tdeckmax_reset_latch();
+#endif
+
 #ifdef CONFIG_ESPRESSIF_HR_TIMER
   ret = esp_hr_timer_init();
   if (ret < 0)

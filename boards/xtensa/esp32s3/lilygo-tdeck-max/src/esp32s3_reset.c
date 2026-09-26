@@ -26,7 +26,10 @@
 
 #include <nuttx/config.h>
 
+#include <stdint.h>
 #include <stdlib.h>
+#include <sys/boardctl.h>
+#include <nuttx/compiler.h>
 #include <nuttx/debug.h>
 #include <assert.h>
 #include <nuttx/arch.h>
@@ -37,6 +40,50 @@
 /* ROM: write the external memory's data cache back to the PSRAM */
 
 extern void cache_writeback_all(void);
+
+/* ROM: why the chip last reset, a soc_reset_reason_t (esp-hal-3rdparty
+ * soc/esp32s3/include/soc/reset_reasons.h)
+ */
+
+extern int esp_rom_get_reset_reason(int cpu_no);
+
+#define ROM_RESET_POWER_ON      0x01  /* Also brown-out, super watchdog */
+#define ROM_RESET_CORE_SW       0x03  /* up_systemreset() */
+#define ROM_RESET_DEEP_SLEEP    0x05
+#define ROM_RESET_CORE_MWDT0    0x07
+#define ROM_RESET_CORE_MWDT1    0x08
+#define ROM_RESET_CORE_RTC_WDT  0x09
+#define ROM_RESET_CPU_MWDT0     0x0b
+#define ROM_RESET_CPU_SW        0x0c
+#define ROM_RESET_CPU_RTC_WDT   0x0d
+#define ROM_RESET_BROWN_OUT     0x0f
+#define ROM_RESET_SYS_RTC_WDT   0x10
+#define ROM_RESET_CPU_MWDT1     0x11
+#define ROM_RESET_SUPER_WDT     0x12
+#define ROM_RESET_USB_UART      0x15  /* The USB Serial/JTAG unit: esptool */
+#define ROM_RESET_USB_JTAG      0x16
+
+/* What board_reset() was given, kept over the reset in PSRAM, which a
+ * software reset leaves alone: the next boot tells an assert's reset
+ * (CONFIG_BOARD_ASSERT_RESET_VALUE) from a reboot.  tdeckmax_reset_latch()
+ * takes it at boot, so that an older note can't pass for a newer reset.
+ */
+
+#define RESET_NOTE_MAGIC        0x544f4e52  /* "RNOT" */
+
+struct reset_note_s
+{
+  uint32_t magic;
+  int32_t  status;
+};
+
+#ifdef CONFIG_ESP32S3_SPIRAM
+static struct reset_note_s g_reset_note locate_data(".ext_ram.noinit");
+#else
+static struct reset_note_s g_reset_note;
+#endif
+
+static struct reset_note_s g_reset_last;    /* The note at this boot */
 
 #ifdef CONFIG_BOARDCTL_RESET
 
@@ -84,8 +131,12 @@ int board_reset(int status)
     }
 
   /* The RAM log is in PSRAM and kept over the reset, for the next boot to
-   * read (a crash's dump): write back what is still only in the cache.
+   * read (a crash's dump), and so is the note of why: write back what is
+   * still only in the cache.
    */
+
+  g_reset_note.magic  = RESET_NOTE_MAGIC;
+  g_reset_note.status = status;
 
 #ifdef CONFIG_ESP32S3_SPIRAM
   cache_writeback_all();
@@ -97,3 +148,97 @@ int board_reset(int status)
 }
 
 #endif /* CONFIG_BOARDCTL_RESET */
+
+/****************************************************************************
+ * Name: tdeckmax_reset_latch
+ *
+ * Description:
+ *   See src/lilygo-tdeck-max.h
+ *
+ ****************************************************************************/
+
+void tdeckmax_reset_latch(void)
+{
+  g_reset_last = g_reset_note;
+  g_reset_note.magic = 0;
+}
+
+#ifdef CONFIG_BOARDCTL_RESET_CAUSE
+
+/****************************************************************************
+ * Name: board_reset_cause
+ *
+ * Description:
+ *   Why the chip last reset.  A software reset's flag is the status
+ *   board_reset() was given (CONFIG_BOARD_ASSERT_RESET_VALUE after an
+ *   assert), or UINT32_MAX if unknown; any other cause's is the ROM's
+ *   reason.
+ *
+ ****************************************************************************/
+
+int board_reset_cause(FAR struct boardioc_reset_cause_s *cause)
+{
+  int reason = esp_rom_get_reset_reason(0);
+
+  cause->flag = reason;
+  switch (reason)
+    {
+      case ROM_RESET_POWER_ON:
+        cause->cause = BOARDIOC_RESETCAUSE_SYS_CHIPPOR;
+        break;
+
+      case ROM_RESET_CORE_SW:
+        cause->cause = BOARDIOC_RESETCAUSE_CORE_SOFT;
+        cause->flag  = g_reset_last.magic == RESET_NOTE_MAGIC ?
+                       (uint32_t)g_reset_last.status : UINT32_MAX;
+        break;
+
+      case ROM_RESET_DEEP_SLEEP:
+        cause->cause = BOARDIOC_RESETCAUSE_CORE_DPSP;
+        break;
+
+      case ROM_RESET_CORE_MWDT0:
+      case ROM_RESET_CORE_MWDT1:
+        cause->cause = BOARDIOC_RESETCAUSE_CORE_MWDT;
+        break;
+
+      case ROM_RESET_CORE_RTC_WDT:
+        cause->cause = BOARDIOC_RESETCAUSE_CORE_RWDT;
+        break;
+
+      case ROM_RESET_CPU_MWDT0:
+      case ROM_RESET_CPU_MWDT1:
+        cause->cause = BOARDIOC_RESETCAUSE_CPU_MWDT;
+        break;
+
+      case ROM_RESET_CPU_SW:
+        cause->cause = BOARDIOC_RESETCAUSE_CPU_SOFT;
+        break;
+
+      case ROM_RESET_CPU_RTC_WDT:
+        cause->cause = BOARDIOC_RESETCAUSE_CPU_RWDT;
+        break;
+
+      case ROM_RESET_BROWN_OUT:
+        cause->cause = BOARDIOC_RESETCAUSE_SYS_BOR;
+        break;
+
+      case ROM_RESET_SYS_RTC_WDT:
+      case ROM_RESET_SUPER_WDT:
+        cause->cause = BOARDIOC_RESETCAUSE_SYS_RWDT;
+        break;
+
+      case ROM_RESET_USB_UART:
+      case ROM_RESET_USB_JTAG:
+        cause->cause = BOARDIOC_RESETCAUSE_PIN;
+        break;
+
+      default:
+        cause->cause = BOARDIOC_RESETCAUSE_UNKOWN;
+        break;
+    }
+
+  return OK;
+}
+
+#endif /* CONFIG_BOARDCTL_RESET_CAUSE */
