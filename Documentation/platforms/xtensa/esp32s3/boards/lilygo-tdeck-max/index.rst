@@ -868,8 +868,9 @@ stays awake.  It drew 98 mA before these changes:
   to only while the rail is on.
 
   Measured on battery with the modem idle on LTE and its USB lead
-  unplugged (2026-09-26): about 48 mA with the chip sleeping between
-  commands, and 18 to 20 mA with the modem sleeping too (``AT+CSCLK=1``,
+  unplugged (2026-09-26): about 48 mA with the chip awake and the same
+  with it sleeping between commands, and 18 to 20 mA with the modem
+  sleeping too (``AT+CSCLK=1``,
   DTR high). With its USB attached the modem doesn't sleep. But the link
   isn't reliable yet while the chip sleeps: the modem misses commands for
   a second or more at a time (no echo, no answer, though it draws what an
